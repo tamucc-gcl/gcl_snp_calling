@@ -94,13 +94,16 @@ workflow {
         Channel.value(file("NO_CONFIG"))
     
     // Collect BAM files and check for indices
-    bam_files = bam_ch.collect()
+    // FIXED: Use toList() instead of collect() to ensure proper list creation
+    bam_files = bam_ch.toList()
     
     // Debug: Show collected BAM files
-    bam_files.view { bams -> "Collected ${bams.size()} BAM files: ${bams.collect{it.name}.take(5).join(', ')}..." }
+    bam_files.view { bams -> "Collected ${bams.size()} BAM files: ${bams.collect{it.name}.join(', ')}" }
     
     // Create channel for BAM indices (they'll be created if missing)
-    bam_indices_ch = bam_ch.map { bam ->
+    // FIXED: Recreate the channel and use toList()
+    bam_ch2 = Channel.fromPath(params.bams, checkIfExists: true)
+    bam_indices_ch = bam_ch2.map { bam ->
         def bai = file("${bam}.bai")
         def bai_alt = file("${bam.baseName}.bai")
         if (bai.exists()) {
@@ -111,7 +114,7 @@ workflow {
             // Will be created in the freebayes process
             return file("${bam}.bai") // placeholder that will be created
         }
-    }.collect()
+    }.toList()
     
     // Step 1: Create genome chunks
     chunk_outputs = CREATE_CHUNKS(reference_ch, params.num_chunks)
@@ -144,18 +147,10 @@ workflow {
         .combine(bam_files)
         .combine(bam_indices_ch)
         .combine(config_ch)
-        .map { it ->
-            // 'it' is a LinkedList containing all combined elements
-            // Destructure the list elements - they come as nested lists from collect()
-            def chunk_id = it[0]
-            def regions_string = it[1]
-            def ref = it[2]
-            def bams = it[3]  // This is a list of BAM files
-            def indices = it[4]  // This is a list of index files
-            def config = it[5]  // This is the config file
-            
+        .map { chunk_id, regions_string, ref, bams, indices, config ->
             // Return tuple matching the new process input signature
-            return tuple(chunk_id, regions_string, ref, bams, indices, config)
+            // bams and indices are already lists from toList()
+            tuple(chunk_id, regions_string, ref, bams, indices, config)
         }
     
     vcf_chunks = FREEBAYES_CHUNK(freebayes_inputs)
