@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --partition=normal
-#SBATCH --job-name=QC_Handler
+#SBATCH --job-name=SNP_Caller
 #SBATCH --time=4-00:00:00
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=5
