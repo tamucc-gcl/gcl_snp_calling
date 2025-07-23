@@ -257,10 +257,14 @@ PYTHON_SCRIPT
         # Show sample names in VCF
         echo "Samples in VCF:"
         grep "^#CHROM" chunk_${chunk_id}.vcf | cut -f10- | tr '\\t' '\\n' | head -10
-        if [ \$(grep "^#CHROM" chunk_${chunk_id}.vcf | cut -f10- | tr '\\t' '\\n' | wc -l) -gt 10 ]; then
-            echo "... and \$(($(grep "^#CHROM" chunk_${chunk_id}.vcf | cut -f10- | tr '\\t' '\\n' | wc -l) - 10)) more samples"
+        
+        # Fixed: Calculate and display remaining samples count properly
+        sample_count=\$(grep "^#CHROM" chunk_${chunk_id}.vcf | cut -f10- | tr '\\t' '\\n' | wc -l)
+        if [ \$sample_count -gt 10 ]; then
+            remaining_samples=\$((sample_count - 10))
+            echo "... and \$remaining_samples more samples"
         fi
-        echo "Total samples in VCF: \$(grep "^#CHROM" chunk_${chunk_id}.vcf | cut -f10- | tr '\\t' '\\n' | wc -l)"
+        echo "Total samples in VCF: \$sample_count"
         
         # Compress and index the VCF
         bgzip -c chunk_${chunk_id}.vcf > chunk_${chunk_id}.vcf.gz
