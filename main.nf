@@ -37,8 +37,12 @@ def helpMessage() {
     nextflow run pipeline.nf \\
         --bams "data/*.bam" \\
         --reference "genome.fasta" \\
-        --num_chunks 20 \\
+        --num_chunks 50 \\
         --output_dir "variant_calls"
+    
+    Note: This version creates exactly the specified number of chunks,
+    with each chunk potentially spanning multiple contigs for complete
+    genome coverage.
     
     """.stripIndent()
 }
@@ -98,30 +102,30 @@ workflow {
     }.collect()
     
     // Step 1: Create genome chunks
-    chunks_bed = CREATE_CHUNKS(reference_ch, params.num_chunks)
+    chunk_outputs = CREATE_CHUNKS(reference_ch, params.num_chunks)
+    chunks_bed = chunk_outputs[0]
+    chunk_regions_file = chunk_outputs[1]
     
-    // Convert BED file to channel of regions
-    chunks_ch = chunks_bed
+    // Step 2: Parse chunk regions file to create input channel for freebayes
+    chunks_ch = chunk_regions_file
         .splitText()
         .map { line ->
             def parts = line.trim().split('\t')
-            def chrom = parts[0]
-            def start = parts[1].toInteger() + 1  // Convert from 0-based to 1-based
-            def end = parts[2].toInteger()
-            def region = "${chrom}:${start}-${end}"
-            def chunk_id = "${chrom}_${parts[1]}_${parts[2]}"
-            return [chunk_id, region]
+            def chunk_id = parts[0]
+            def regions_string = parts[1]
+            return [chunk_id, regions_string]
         }
     
-    // Step 2: Run freebayes on each chunk
+    // Step 3: Run freebayes on each chunk
     vcf_chunks = FREEBAYES_CHUNK(
         reference_ch,
         bam_files,
         bam_indices_ch,
+        chunk_regions_file,
         chunks_ch
     )
     
-    // Step 3: Combine all VCF files
+    // Step 4: Combine all VCF files
     all_vcfs = vcf_chunks.map { chunk_id, vcf -> vcf }.collect()
     
     COMBINE_VCFS(
@@ -145,10 +149,12 @@ workflow.onComplete {
         log.info "Results are available in: ${params.output_dir}/"
         log.info "Final VCF file: ${params.output_dir}/${params.output_vcf}"
         log.info ""
+        log.info "Pipeline used exactly ${params.num_chunks} chunks with complete genome coverage"
+        log.info ""
         log.info "You can view the execution reports at:"
-        log.info "- Timeline: ${params.output_dir}/timeline.html"
-        log.info "- Report:   ${params.output_dir}/report.html"
-        log.info "- Trace:    ${params.output_dir}/trace.txt"
+        log.info "- Timeline: ${params.output_dir}/pipeline/pipeline_timeline.html"
+        log.info "- Report:   ${params.output_dir}/pipeline/pipeline_report.html"
+        log.info "- Trace:    ${params.output_dir}/pipeline/pipeline_trace.txt"
     } else {
         log.info ""
         log.info "Pipeline failed. Check the error messages above."

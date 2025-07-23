@@ -1,4 +1,4 @@
-// modules/freebayes_chunk.nf
+// modules/freebayes_chunk.nf - Updated for multi-contig chunks
 
 process FREEBAYES_CHUNK {
     tag "chunk_${chunk_id}"
@@ -7,7 +7,8 @@ process FREEBAYES_CHUNK {
     path reference
     path bams
     path bam_indices
-    tuple val(chunk_id), val(region)
+    path chunk_regions_file
+    tuple val(chunk_id), val(regions_string)
     
     output:
     tuple val(chunk_id), path("chunk_${chunk_id}.vcf.gz")
@@ -23,32 +24,79 @@ process FREEBAYES_CHUNK {
         fi
     done
     
-    echo "Running freebayes on region: ${region}"
-    echo "Using BAM files: ${bams.join(', ')}"
+    echo "Processing chunk ${chunk_id}"
+    echo "Regions: ${regions_string}"
     
-    # Run freebayes on this chunk
+    # Parse regions string and create BED file for this chunk
+    echo "${regions_string}" | tr ',' '\\n' > regions_list.txt
+    
+    # Convert regions to BED format for freebayes --targets
+    cat > chunk_targets.bed << 'EOF'
+# BED file for chunk ${chunk_id}
+EOF
+    
+    while read region; do
+        if [ ! -z "\$region" ]; then
+            # Parse region format: chr:start-end
+            chrom=\$(echo \$region | cut -d':' -f1)
+            positions=\$(echo \$region | cut -d':' -f2)
+            start=\$(echo \$positions | cut -d'-' -f1)
+            end=\$(echo \$positions | cut -d'-' -f2)
+            
+            # Convert to 0-based BED format
+            bed_start=\$((start - 1))
+            
+            echo -e "\$chrom\\t\$bed_start\\t\$end" >> chunk_targets.bed
+            echo "  Added region: \$chrom:\$start-\$end (BED: \$chrom:\$bed_start-\$end)"
+        fi
+    done < regions_list.txt
+    
+    echo "Created BED file for chunk ${chunk_id}:"
+    cat chunk_targets.bed
+    
+    # Run freebayes with targets file
+    echo "Running freebayes on chunk ${chunk_id}..."
+    
     freebayes \\
         --fasta-reference ${reference} \\
-        --region ${region} \\
+        --targets chunk_targets.bed \\
         ${bam_args} \\
         --vcf chunk_${chunk_id}.vcf
     
-    # Compress and index the VCF
+    # Check if freebayes produced output
     if [ -s chunk_${chunk_id}.vcf ]; then
+        echo "Freebayes completed successfully for chunk ${chunk_id}"
+        
+        # Count variants found
+        variant_count=\$(grep -v '^#' chunk_${chunk_id}.vcf | wc -l)
+        echo "Found \$variant_count variants in chunk ${chunk_id}"
+        
+        # Compress and index the VCF
         bgzip -c chunk_${chunk_id}.vcf > chunk_${chunk_id}.vcf.gz
         tabix -p vcf chunk_${chunk_id}.vcf.gz
-        echo "Successfully processed chunk ${chunk_id}"
+        
+        echo "Successfully compressed and indexed chunk ${chunk_id}"
     else
         echo "No variants found in chunk ${chunk_id}, creating empty VCF"
+        
         # Create minimal VCF header for empty chunks
-        echo "##fileformat=VCFv4.2" > chunk_${chunk_id}.vcf
-        echo "##reference=${reference}" >> chunk_${chunk_id}.vcf
-        echo "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO" >> chunk_${chunk_id}.vcf
+        cat > chunk_${chunk_id}.vcf << 'VCF_HEADER'
+##fileformat=VCFv4.2
+##reference=${reference}
+##source=freebayes
+##INFO=<ID=DP,Number=1,Type=Integer,Description="Total read depth">
+##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
+##FORMAT=<ID=DP,Number=1,Type=Integer,Description="Read depth">
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO
+VCF_HEADER
+        
         bgzip -c chunk_${chunk_id}.vcf > chunk_${chunk_id}.vcf.gz
         tabix -p vcf chunk_${chunk_id}.vcf.gz
     fi
     
-    # Clean up uncompressed VCF
-    rm -f chunk_${chunk_id}.vcf
+    # Clean up intermediate files
+    rm -f chunk_${chunk_id}.vcf regions_list.txt chunk_targets.bed
+    
+    echo "Chunk ${chunk_id} processing complete"
     """
 }
