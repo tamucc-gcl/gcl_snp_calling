@@ -147,10 +147,17 @@ workflow {
         .combine(bam_files)
         .combine(bam_indices_ch)
         .combine(config_ch)
-        .map { chunk_id, regions_string, ref, bams, indices, config ->
-            // Return tuple matching the new process input signature
-            // bams and indices are already lists from toList()
-            tuple(chunk_id, regions_string, ref, bams, indices, config)
+        .map { it ->
+            // 'it' is a list containing all combined elements
+            def chunk_id = it[0]
+            def regions_string = it[1]
+            def ref = it[2]
+            def bams = it[3]  // This is already a list from toList()
+            def indices = it[4]  // This is already a list from toList()
+            def config = it[5]
+            
+            // Return tuple matching the process input signature
+            return tuple(chunk_id, regions_string, ref, bams, indices, config)
         }
     
     vcf_chunks = FREEBAYES_CHUNK(freebayes_inputs)
