@@ -11,8 +11,8 @@ source activate nextflow
 nextflow run gcl_snp_calling/main.nf \
     -profile slurm \
     -resume \
-    --bams "data/bam/*.bam" \
-    --reference "data/genome/genome.fa" \
+    --bams "./data/bam/*.bam" \
+    --reference "./genome/genome.fa" \
     --num_chunks 50 \
     --output_dir "data/snps" \
     --output_vcf "all_samples.vcf.gz"
