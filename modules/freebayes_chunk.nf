@@ -10,15 +10,14 @@ process FREEBAYES_CHUNK {
     tuple val(chunk_id), path("chunk_${chunk_id}.vcf.gz")
     
     script:
-    // Create the --bam arguments as a Groovy string that will be properly interpolated
-    def bam_args = bams.collect{ "--bam ${it.name}" }.join(' ')
     def config_name = config_file.name
     """
     # Debug: Show all BAM files
     echo "Processing chunk ${chunk_id}"
-    echo "Number of BAM files: ${bams.size()}"
-    echo "BAM files present in work directory:"
-    ls -la *.bam 2>/dev/null || echo "No BAM files found!"
+    echo "Number of BAM files passed: ${bams.size()}"
+    echo "BAM files in work directory:"
+    ls -la *.bam 2>/dev/null | head -20
+    echo "Total BAM files found: \$(ls *.bam 2>/dev/null | wc -l)"
     
     # Ensure BAM indices exist
     for bam in *.bam; do
@@ -218,14 +217,32 @@ PYTHON_SCRIPT
         echo "No freebayes config provided, using default parameters"
     fi
     
+    # Build BAM arguments dynamically from files in work directory
+    echo "Building BAM file list..."
+    BAM_ARGS=""
+    BAM_COUNT=0
+    for bam in *.bam; do
+        if [ -f "\$bam" ]; then
+            BAM_ARGS="\$BAM_ARGS --bam \$bam"
+            BAM_COUNT=\$((BAM_COUNT + 1))
+        fi
+    done
+    
+    echo "Found \$BAM_COUNT BAM files"
+    echo "First few BAM arguments: \$(echo \$BAM_ARGS | cut -d' ' -f1-10)..."
+    
+    if [ \$BAM_COUNT -eq 0 ]; then
+        echo "ERROR: No BAM files found in work directory!"
+        exit 1
+    fi
+    
     # Run freebayes with targets file
-    echo "Running freebayes on chunk ${chunk_id}..."
-    echo "Using BAM arguments: ${bam_args}"
+    echo "Running freebayes on chunk ${chunk_id} with \$BAM_COUNT BAM files..."
     
     freebayes \\
         --fasta-reference ${reference} \\
         --targets chunk_targets.bed \\
-        ${bam_args} \\
+        \$BAM_ARGS \\
         \$FREEBAYES_OPTS \\
         --vcf chunk_${chunk_id}.vcf
     
@@ -240,7 +257,10 @@ PYTHON_SCRIPT
         # Show sample names in VCF
         echo "Samples in VCF:"
         grep "^#CHROM" chunk_${chunk_id}.vcf | cut -f10- | tr '\\t' '\\n' | head -10
-        echo "Total samples: \$(grep "^#CHROM" chunk_${chunk_id}.vcf | cut -f10- | tr '\\t' '\\n' | wc -l)"
+        if [ \$(grep "^#CHROM" chunk_${chunk_id}.vcf | cut -f10- | tr '\\t' '\\n' | wc -l) -gt 10 ]; then
+            echo "... and \$(($(grep "^#CHROM" chunk_${chunk_id}.vcf | cut -f10- | tr '\\t' '\\n' | wc -l) - 10)) more samples"
+        fi
+        echo "Total samples in VCF: \$(grep "^#CHROM" chunk_${chunk_id}.vcf | cut -f10- | tr '\\t' '\\n' | wc -l)"
         
         # Compress and index the VCF
         bgzip -c chunk_${chunk_id}.vcf > chunk_${chunk_id}.vcf.gz
