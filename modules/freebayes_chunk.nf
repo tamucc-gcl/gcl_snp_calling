@@ -1,10 +1,10 @@
-// modules/freebayes_chunk.nf - Fixed for multiple BAM files
+// modules/freebayes_chunk.nf - Fixed for multiple BAM files with staging directories
 
 process FREEBAYES_CHUNK {
     tag "chunk_${chunk_id}"
     
     input:
-    tuple val(chunk_id), val(regions_string), path(reference), path(bams), path(bam_indices), path(config_file)
+    tuple val(chunk_id), val(regions_string), path(reference), path('input_bams/*'), path('input_indices/*'), path(config_file)
     
     output:
     tuple val(chunk_id), path("chunk_${chunk_id}.vcf.gz")
@@ -14,15 +14,24 @@ process FREEBAYES_CHUNK {
     """
     # Debug: Show all BAM files
     echo "Processing chunk ${chunk_id}"
-    echo "Number of BAM files passed: ${bams.size()}"
-    echo "BAM files in work directory:"
-    ls -la *.bam 2>/dev/null | head -20
-    echo "Total BAM files found: \$(ls *.bam 2>/dev/null | wc -l)"
+    echo "BAM files in staging directory:"
+    ls -la input_bams/*.bam 2>/dev/null || echo "No BAM files found in input_bams/"
+    echo "Total BAM files staged: \$(ls input_bams/*.bam 2>/dev/null | wc -l)"
     
-    # Ensure BAM indices exist
-    for bam in *.bam; do
+    # Ensure BAM indices exist - check both locations
+    for bam in input_bams/*.bam; do
         if [ -f "\$bam" ]; then
-            if [ ! -f "\${bam}.bai" ] && [ ! -f "\${bam%.bam}.bai" ]; then
+            bam_name=\$(basename "\$bam")
+            bam_base=\$(basename "\$bam" .bam)
+            
+            # Check if index exists in indices directory
+            if [ -f "input_indices/\${bam_name}.bai" ]; then
+                echo "Found index: input_indices/\${bam_name}.bai"
+            elif [ -f "input_indices/\${bam_base}.bai" ]; then
+                echo "Found index: input_indices/\${bam_base}.bai"
+                # Copy it to the expected location
+                cp "input_indices/\${bam_base}.bai" "input_bams/\${bam_name}.bai"
+            else
                 echo "Creating index for \$bam"
                 samtools index "\$bam"
             fi
@@ -217,33 +226,26 @@ PYTHON_SCRIPT
         echo "No freebayes config provided, using default parameters"
     fi
     
-    # Build BAM arguments dynamically from files in work directory
-    echo "Building BAM file list..."
-    BAM_ARGS=""
-    BAM_COUNT=0
-    for bam in *.bam; do
-        if [ -f "\$bam" ]; then
-            BAM_ARGS="\$BAM_ARGS --bam \$bam"
-            BAM_COUNT=\$((BAM_COUNT + 1))
-        fi
-    done
-    
-    echo "Found \$BAM_COUNT BAM files"
-    echo "First few BAM arguments: \$(echo \$BAM_ARGS | cut -d' ' -f1-10)..."
+    # Verify we have BAM files before proceeding
+    BAM_COUNT=\$(ls input_bams/*.bam 2>/dev/null | wc -l)
     
     if [ \$BAM_COUNT -eq 0 ]; then
-        echo "ERROR: No BAM files found in work directory!"
+        echo "ERROR: No BAM files found in input_bams directory!"
         exit 1
     fi
     
-    # Run freebayes with targets file
+    echo "Found \$BAM_COUNT BAM files"
+    echo "BAM files list:"
+    ls -la input_bams/*.bam
+    
+    # Run freebayes with targets file - using the directory wildcard
     echo "Running freebayes on chunk ${chunk_id} with \$BAM_COUNT BAM files..."
     
     freebayes \\
         --fasta-reference ${reference} \\
         --targets chunk_targets.bed \\
-        \$BAM_ARGS \\
         \$FREEBAYES_OPTS \\
+        input_bams/*.bam \\
         --vcf chunk_${chunk_id}.vcf
     
     # Check if freebayes produced output
@@ -265,6 +267,11 @@ PYTHON_SCRIPT
             echo "... and \$remaining_samples more samples"
         fi
         echo "Total samples in VCF: \$sample_count"
+        
+        # Verify we have all expected samples (should be 6)
+        if [ \$sample_count -ne 6 ]; then
+            echo "WARNING: Expected 6 samples but found \$sample_count"
+        fi
         
         # Compress and index the VCF
         bgzip -c chunk_${chunk_id}.vcf > chunk_${chunk_id}.vcf.gz
