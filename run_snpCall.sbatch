@@ -11,6 +11,7 @@ module load nextflow/23.10.1
 module load miniconda3
 
 freebayes_parameters="${1:-gcl_snp_calling/freebayes_parameters.json}"
+nChunk="{$2:-50}
 
 nextflow run gcl_snp_calling/main.nf \
     -profile slurm \
@@ -18,6 +19,6 @@ nextflow run gcl_snp_calling/main.nf \
     --bams "./data/bam/*.bam" \
     --reference "./genome/genome.fa" \
     --freebayes_config ${freebayes_parameters} \
-    --num_chunks 50 \
+    --num_chunks ${nChunk} \
     --output_dir "data/snps" \
     --output_vcf "all_samples.vcf.gz"
