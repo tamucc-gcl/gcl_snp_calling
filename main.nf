@@ -106,23 +106,44 @@ workflow {
     chunks_bed = chunk_outputs[0]
     chunk_regions_file = chunk_outputs[1]
     
+    // Debug: Print chunk regions file content
+    chunk_regions_file.view { file ->
+        println "Created chunk regions file: ${file}"
+        return file
+    }
+    
     // Step 2: Parse chunk regions file to create input channel for freebayes
+    // Use splitText() to create separate channels for each chunk
     chunks_ch = chunk_regions_file
         .splitText()
         .map { line ->
-            def parts = line.trim().split('\t')
-            def chunk_id = parts[0]
-            def regions_string = parts[1]
-            return [chunk_id, regions_string]
+            def trimmed = line.trim()
+            if (trimmed) {  // Only process non-empty lines
+                def parts = trimmed.split('\t')
+                if (parts.size() >= 2) {
+                    def chunk_id = parts[0]
+                    def regions_string = parts[1]
+                    println "Processing chunk: ${chunk_id} with regions: ${regions_string}"
+                    return [chunk_id, regions_string]
+                }
+            }
+            return null
         }
+        .filter { it != null }  // Remove null entries
     
-    // Step 3: Run freebayes on each chunk
+    // Debug: Count chunks
+    chunks_ch_debug = chunks_ch.map { chunk_info ->
+        println "Chunk channel item: ${chunk_info[0]} -> ${chunk_info[1]}"
+        return chunk_info
+    }
+    
+    // Step 3: Run freebayes on each chunk in parallel
+    // Remove chunk_regions_file from FREEBAYES_CHUNK inputs since it's not needed per chunk
     vcf_chunks = FREEBAYES_CHUNK(
         reference_ch,
         bam_files,
         bam_indices_ch,
-        chunk_regions_file,
-        chunks_ch
+        chunks_ch_debug
     )
     
     // Step 4: Combine all VCF files

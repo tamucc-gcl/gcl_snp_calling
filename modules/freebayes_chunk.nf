@@ -1,4 +1,4 @@
-// modules/freebayes_chunk.nf - Updated for multi-contig chunks
+// modules/freebayes_chunk.nf - Fixed BED file format
 
 process FREEBAYES_CHUNK {
     tag "chunk_${chunk_id}"
@@ -7,7 +7,6 @@ process FREEBAYES_CHUNK {
     path reference
     path bams
     path bam_indices
-    path chunk_regions_file
     tuple val(chunk_id), val(regions_string)
     
     output:
@@ -31,9 +30,8 @@ process FREEBAYES_CHUNK {
     echo "${regions_string}" | tr ',' '\\n' > regions_list.txt
     
     # Convert regions to BED format for freebayes --targets
-    cat > chunk_targets.bed << 'EOF'
-# BED file for chunk ${chunk_id}
-EOF
+    # Create BED file WITHOUT comment lines (freebayes doesn't like them)
+    touch chunk_targets.bed
     
     while read region; do
         if [ ! -z "\$region" ]; then
@@ -53,6 +51,12 @@ EOF
     
     echo "Created BED file for chunk ${chunk_id}:"
     cat chunk_targets.bed
+    
+    # Verify BED file is not empty
+    if [ ! -s chunk_targets.bed ]; then
+        echo "ERROR: BED file is empty for chunk ${chunk_id}"
+        exit 1
+    fi
     
     # Run freebayes with targets file
     echo "Running freebayes on chunk ${chunk_id}..."

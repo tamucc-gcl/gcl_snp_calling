@@ -1,4 +1,4 @@
-// modules/combine_vcfs.nf
+// modules/combine_vcfs.nf - Updated for new chunk naming
 
 process COMBINE_VCFS {
     tag "combining_vcfs"
@@ -16,20 +16,19 @@ process COMBINE_VCFS {
     """
     echo "Combining ${vcf_files.size()} VCF files..."
     
-    # Create list of VCF files sorted by genomic position
-    # Extract chromosome and start position for sorting
+    # Create list of VCF files sorted by chunk number
+    # New filename format: chunk_0.vcf.gz, chunk_1.vcf.gz, etc.
     for vcf in ${vcf_files.join(' ')}; do
-        # Get the chunk info from filename (format: chunk_chr_start_end.vcf.gz)
+        # Get the chunk number from filename (format: chunk_N.vcf.gz)
         base=\$(basename \$vcf .vcf.gz)
-        # Extract chr, start, end from filename
-        chrom=\$(echo \$base | cut -d'_' -f2)
-        start=\$(echo \$base | cut -d'_' -f3)
-        end=\$(echo \$base | cut -d'_' -f4)
-        echo -e "\$chrom\t\$start\t\$end\t\$vcf"
-    done | sort -k1,1V -k2,2n > vcf_sort_list.txt
+        chunk_num=\$(echo \$base | sed 's/chunk_//')
+        
+        # Pad with zeros for proper sorting
+        printf "%05d\\t%s\\n" "\$chunk_num" "\$vcf"
+    done | sort -n > vcf_sort_list.txt
     
     # Extract just the VCF filenames in sorted order
-    cut -f4 vcf_sort_list.txt > vcf_list.txt
+    cut -f2 vcf_sort_list.txt > vcf_list.txt
     
     echo "VCF files will be combined in this order:"
     cat vcf_list.txt
@@ -46,13 +45,19 @@ process COMBINE_VCFS {
     if [ \${#non_empty_vcfs[@]} -eq 0 ]; then
         echo "No variants found in any chunks. Creating empty VCF..."
         # Create minimal VCF with proper header
-        echo "##fileformat=VCFv4.2" > empty.vcf
-        echo "##reference=${params.reference}" >> empty.vcf
-        echo "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO" >> empty.vcf
+        cat > empty.vcf << 'VCF_HEADER'
+##fileformat=VCFv4.2
+##reference=${params.reference}
+##source=freebayes-parallel
+##INFO=<ID=DP,Number=1,Type=Integer,Description="Total read depth">
+##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
+##FORMAT=<ID=DP,Number=1,Type=Integer,Description="Read depth">
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO
+VCF_HEADER
         bgzip -c empty.vcf > ${output_name}
         tabix -p vcf ${output_name}
     else
-        echo "Found \${#non_empty_vcfs[@]} non-empty VCF files"
+        echo "Found \${#non_empty_vcfs[@]} non-empty VCF files out of ${vcf_files.size()} total"
         
         # Create list of non-empty VCFs
         printf '%s\n' "\${non_empty_vcfs[@]}" > non_empty_vcf_list.txt
@@ -73,5 +78,10 @@ process COMBINE_VCFS {
     echo "=== SUMMARY ==="
     echo "Total variants: \$(zcat ${output_name} | grep -v '^#' | wc -l)"
     echo "File size: \$(ls -lh ${output_name} | awk '{print \$5}')"
+    echo "Chunks processed: ${vcf_files.size()}"
+    
+    # Print first few variants for verification
+    echo "=== FIRST FEW VARIANTS ==="
+    zcat ${output_name} | grep -v '^#' | head -3
     """
 }
