@@ -96,6 +96,9 @@ workflow {
     // Collect BAM files and check for indices
     bam_files = bam_ch.collect()
     
+    // Debug: Show collected BAM files
+    bam_files.view { bams -> "Collected ${bams.size()} BAM files: ${bams.collect{it.name}.take(5).join(', ')}..." }
+    
     // Create channel for BAM indices (they'll be created if missing)
     bam_indices_ch = bam_ch.map { bam ->
         def bai = file("${bam}.bai")

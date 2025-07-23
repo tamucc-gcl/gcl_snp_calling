@@ -1,4 +1,4 @@
-// modules/freebayes_chunk.nf - With config file support
+// modules/freebayes_chunk.nf - Fixed for multiple BAM files
 
 process FREEBAYES_CHUNK {
     tag "chunk_${chunk_id}"
@@ -10,18 +10,26 @@ process FREEBAYES_CHUNK {
     tuple val(chunk_id), path("chunk_${chunk_id}.vcf.gz")
     
     script:
-    def bam_args = bams.collect{ "--bam $it" }.join(' ')
+    // Create the --bam arguments as a Groovy string that will be properly interpolated
+    def bam_args = bams.collect{ "--bam ${it.name}" }.join(' ')
     def config_name = config_file.name
     """
+    # Debug: Show all BAM files
+    echo "Processing chunk ${chunk_id}"
+    echo "Number of BAM files: ${bams.size()}"
+    echo "BAM files present in work directory:"
+    ls -la *.bam 2>/dev/null || echo "No BAM files found!"
+    
     # Ensure BAM indices exist
-    for bam in ${bams.join(' ')}; do
-        if [ ! -f \${bam}.bai ]; then
-            echo "Creating index for \${bam}"
-            samtools index \${bam}
+    for bam in *.bam; do
+        if [ -f "\$bam" ]; then
+            if [ ! -f "\${bam}.bai" ] && [ ! -f "\${bam%.bam}.bai" ]; then
+                echo "Creating index for \$bam"
+                samtools index "\$bam"
+            fi
         fi
     done
     
-    echo "Processing chunk ${chunk_id}"
     echo "Regions: ${regions_string}"
     
     # Parse regions string and create BED file for this chunk
@@ -212,6 +220,7 @@ PYTHON_SCRIPT
     
     # Run freebayes with targets file
     echo "Running freebayes on chunk ${chunk_id}..."
+    echo "Using BAM arguments: ${bam_args}"
     
     freebayes \\
         --fasta-reference ${reference} \\
@@ -227,6 +236,11 @@ PYTHON_SCRIPT
         # Count variants found
         variant_count=\$(grep -v '^#' chunk_${chunk_id}.vcf | wc -l)
         echo "Found \$variant_count variants in chunk ${chunk_id}"
+        
+        # Show sample names in VCF
+        echo "Samples in VCF:"
+        grep "^#CHROM" chunk_${chunk_id}.vcf | cut -f10- | tr '\\t' '\\n' | head -10
+        echo "Total samples: \$(grep "^#CHROM" chunk_${chunk_id}.vcf | cut -f10- | tr '\\t' '\\n' | wc -l)"
         
         # Compress and index the VCF
         bgzip -c chunk_${chunk_id}.vcf > chunk_${chunk_id}.vcf.gz
