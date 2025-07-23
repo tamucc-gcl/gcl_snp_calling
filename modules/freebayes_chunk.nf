@@ -4,13 +4,14 @@ process FREEBAYES_CHUNK {
     tag "chunk_${chunk_id}"
     
     input:
-    tuple val(chunk_id), val(regions_string), path(reference), path(bams), path(bam_indices), path(config)
+    tuple val(chunk_id), val(regions_string), path(reference), path(bams), path(bam_indices), path(config_file)
     
     output:
     tuple val(chunk_id), path("chunk_${chunk_id}.vcf.gz")
     
     script:
     def bam_args = bams.collect{ "--bam $it" }.join(' ')
+    def config_name = config_file.name
     """
     # Ensure BAM indices exist
     for bam in ${bams.join(' ')}; do
@@ -58,8 +59,9 @@ process FREEBAYES_CHUNK {
     # Parse freebayes config if provided
     FREEBAYES_OPTS=""
     
-    if [ "${config.name}" != "NO_CONFIG" ] && [ -f "${config}" ]; then
-        echo "Loading freebayes configuration from ${config}"
+    # Check if config file exists and is not the placeholder
+    if [ "${config_name}" != "NO_CONFIG" ] && [ -f "${config_file}" ] && [[ "${config_file}" == *.json ]]; then
+        echo "Loading freebayes configuration from ${config_file}"
         
         # Parse JSON config using Python (available in most systems)
         FREEBAYES_OPTS=\$(python3 << 'PYTHON_SCRIPT'
@@ -67,7 +69,7 @@ import json
 import sys
 
 # Read the config file
-with open('${config}', 'r') as f:
+with open('${config_file}', 'r') as f:
     config = json.load(f)
 
 # Build freebayes options
