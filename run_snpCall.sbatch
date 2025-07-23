@@ -8,6 +8,7 @@
 #module load miniconda3
 #source activate nextflow
 module load nextflow/23.10.1
+module load miniconda3
 
 nextflow run gcl_snp_calling/main.nf \
     -profile slurm \
