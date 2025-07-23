@@ -11,7 +11,7 @@ module load nextflow/23.10.1
 module load miniconda3
 
 freebayes_parameters="${1:-gcl_snp_calling/freebayes_parameters.json}"
-nChunk="{$2:-50}
+nChunk="{$2:-50}"
 
 echo ${freebayes_parameters}
 cat ${freebayes_parameters}
