@@ -13,6 +13,11 @@ module load miniconda3
 freebayes_parameters="${1:-gcl_snp_calling/freebayes_parameters.json}"
 nChunk="{$2:-50}
 
+echo ${freebayes_parameters}
+cat ${freebayes_parameters}
+echo ${nChunk}
+
+
 nextflow run gcl_snp_calling/main.nf \
     -profile slurm \
     -resume \
