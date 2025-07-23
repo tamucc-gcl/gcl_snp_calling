@@ -4,7 +4,7 @@ process FREEBAYES_CHUNK {
     tag "chunk_${chunk_id}"
     
     input:
-    tuple path(reference), path(bams), path(bam_indices), val(chunk_id), val(regions_string)
+    tuple val(chunk_id), val(regions_string), path(reference), path(bams), path(bam_indices)
     
     output:
     tuple val(chunk_id), path("chunk_${chunk_id}.vcf.gz")

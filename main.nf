@@ -124,24 +124,16 @@ workflow {
         .filter { it != null }  // Remove null entries
     
     // Step 3: Run freebayes on each chunk in parallel
-    // Create tuples with all inputs for each chunk
+    // Create tuples matching the new FREEBAYES_CHUNK input signature:
+    // tuple val(chunk_id), val(regions_string), path(reference), path(bams), path(bam_indices)
+    
     freebayes_inputs = chunks_ch
         .combine(reference_ch)
-        .combine(bam_files) 
+        .combine(bam_files)
         .combine(bam_indices_ch)
-        .map { tuple_data ->
-            // Properly destructure the nested tuple
-            def chunk_tuple = tuple_data[0]
-            def ref = tuple_data[1]
-            def bams = tuple_data[2]
-            def indices = tuple_data[3]
-            
-            // Extract chunk_id and regions_string from chunk_tuple
-            def chunk_id = chunk_tuple[0]
-            def regions_string = chunk_tuple[1]
-            
-            // Return tuple in the format expected by FREEBAYES_CHUNK
-            return [ref, bams, indices, chunk_id, regions_string]
+        .map { chunk_id, regions_string, ref, bams, indices ->
+            // Return tuple matching the new process input signature
+            return tuple(chunk_id, regions_string, ref, bams, indices)
         }
     
     vcf_chunks = FREEBAYES_CHUNK(freebayes_inputs)
