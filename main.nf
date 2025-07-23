@@ -134,7 +134,7 @@ workflow {
     
     // Step 3: Run freebayes on each chunk in parallel
     // Create tuples matching the new FREEBAYES_CHUNK input signature:
-    // tuple val(chunk_id), val(regions_string), path(reference), path(bams), path(bam_indices), path(config)
+    // tuple val(chunk_id), val(regions_string), path(reference), path(bams), path(bam_indices), path(config_file)
     
     freebayes_inputs = chunks_ch
         .combine(reference_ch)
@@ -143,13 +143,13 @@ workflow {
         .combine(config_ch)
         .map { it ->
             // 'it' is a LinkedList containing all combined elements
-            // Destructure the list elements
+            // Destructure the list elements - they come as nested lists from collect()
             def chunk_id = it[0]
             def regions_string = it[1]
             def ref = it[2]
-            def bams = it[3]
-            def indices = it[4]
-            def config = it[5]
+            def bams = it[3]  // This is a list of BAM files
+            def indices = it[4]  // This is a list of index files
+            def config = it[5]  // This is the config file
             
             // Return tuple matching the new process input signature
             return tuple(chunk_id, regions_string, ref, bams, indices, config)
