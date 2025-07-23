@@ -131,7 +131,15 @@ workflow {
         .combine(reference_ch)
         .combine(bam_files)
         .combine(bam_indices_ch)
-        .map { chunk_id, regions_string, ref, bams, indices ->
+        .map { it ->
+            // 'it' is a LinkedList containing all combined elements
+            // Destructure the list elements
+            def chunk_id = it[0]
+            def regions_string = it[1]
+            def ref = it[2]
+            def bams = it[3]
+            def indices = it[4]
+            
             // Return tuple matching the new process input signature
             return tuple(chunk_id, regions_string, ref, bams, indices)
         }
