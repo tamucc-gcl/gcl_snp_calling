@@ -1,259 +1,161 @@
-// modules/freebayes_chunk.nf - With config file support
+// modules/create_chunks.nf - Genome-based chunking (exact chunk count)
 
-process FREEBAYES_CHUNK {
-    tag "chunk_${chunk_id}"
+process CREATE_CHUNKS {
+    tag "chunking_genome"
     
     input:
-    tuple val(chunk_id), val(regions_string), path(reference), path(bams), path(bam_indices), path(config_file)
+    path reference
+    val num_chunks
     
     output:
-    tuple val(chunk_id), path("chunk_${chunk_id}.vcf.gz")
+    path "chunks.bed"
+    path "chunk_regions.txt"  // Maps chunk_id to list of regions for freebayes
     
     script:
-    def bam_args = bams.collect{ "--bam $it" }.join(' ')
-    def config_name = config_file.name
     """
-    # Ensure BAM indices exist
-    for bam in ${bams.join(' ')}; do
-        if [ ! -f \${bam}.bai ]; then
-            echo "Creating index for \${bam}"
-            samtools index \${bam}
-        fi
-    done
-    
-    echo "Processing chunk ${chunk_id}"
-    echo "Regions: ${regions_string}"
-    
-    # Parse regions string and create BED file for this chunk
-    echo "${regions_string}" | tr ',' '\\n' > regions_list.txt
-    
-    # Convert regions to BED format for freebayes --targets
-    # Create BED file WITHOUT comment lines (freebayes doesn't like them)
-    touch chunk_targets.bed
-    
-    while read region; do
-        if [ ! -z "\$region" ]; then
-            # Parse region format: chr:start-end
-            chrom=\$(echo \$region | cut -d':' -f1)
-            positions=\$(echo \$region | cut -d':' -f2)
-            start=\$(echo \$positions | cut -d'-' -f1)
-            end=\$(echo \$positions | cut -d'-' -f2)
-            
-            # Convert to 0-based BED format
-            bed_start=\$((start - 1))
-            
-            echo -e "\$chrom\\t\$bed_start\\t\$end" >> chunk_targets.bed
-            echo "  Added region: \$chrom:\$start-\$end (BED: \$chrom:\$bed_start-\$end)"
-        fi
-    done < regions_list.txt
-    
-    echo "Created BED file for chunk ${chunk_id}:"
-    cat chunk_targets.bed
-    
-    # Verify BED file is not empty
-    if [ ! -s chunk_targets.bed ]; then
-        echo "ERROR: BED file is empty for chunk ${chunk_id}"
-        exit 1
+    # Create fasta index if it doesn't exist
+    if [ ! -f ${reference}.fai ]; then
+        samtools faidx ${reference}
     fi
     
-    # Parse freebayes config if provided
-    FREEBAYES_OPTS=""
-    
-    # Check if config file exists and is not the placeholder
-    if [ "${config_name}" != "NO_CONFIG" ] && [ -f "${config_file}" ] && [[ "${config_file}" == *.json ]]; then
-        echo "Loading freebayes configuration from ${config_file}"
-        
-        # Parse JSON config using Python (available in most systems)
-        FREEBAYES_OPTS=\$(python3 << 'PYTHON_SCRIPT'
-import json
+    # Genome-based chunking - divides genome into exact number of chunks
+    cat > create_chunks.py << 'PYTHON_SCRIPT'
 import sys
 
-# Read the config file
-with open('${config_file}', 'r') as f:
-    config = json.load(f)
+num_chunks = ${num_chunks}
+chromosomes = []
+total_length = 0
 
-# Build freebayes options
-opts = []
+# Read all contigs and build genome map
+with open('${reference}.fai', 'r') as f:
+    for line in f:
+        parts = line.strip().split('\\t')
+        chrom = parts[0]
+        length = int(parts[1])
+        chromosomes.append((chrom, length))
+        total_length += length
 
-# Algorithm parameters
-if 'algorithm_parameters' in config:
-    params = config['algorithm_parameters']
+print(f"Total genome: {total_length:,} bp across {len(chromosomes)} contigs")
+print(f"Creating exactly {num_chunks} chunks")
+
+# Calculate chunk size
+chunk_size = total_length // num_chunks
+remainder = total_length % num_chunks
+print(f"Base chunk size: {chunk_size:,} bp")
+print(f"Remainder: {remainder:,} bp (will be distributed across first {remainder} chunks)")
+
+# Create cumulative position map
+cumulative_pos = []
+current_pos = 0
+for chrom, length in chromosomes:
+    cumulative_pos.append((chrom, current_pos, current_pos + length - 1))
+    current_pos += length
+
+print(f"Genome position map created")
+
+# Function to find contig and position given global position
+def find_contig_pos(global_pos):
+    for chrom, start, end in cumulative_pos:
+        if start <= global_pos <= end:
+            local_pos = global_pos - start + 1  # 1-based position within contig
+            return chrom, local_pos
+    return None, None
+
+# Create chunks
+chunks = []
+chunk_regions = {}  # chunk_id -> list of regions
+
+for chunk_id in range(num_chunks):
+    # Calculate start and end positions for this chunk
+    chunk_start = chunk_id * chunk_size + min(chunk_id, remainder)
     
-    if params.get('min_mapping_quality') is not None:
-        opts.append(f"--min-mapping-quality {params['min_mapping_quality']}")
-    if params.get('min_base_quality') is not None:
-        opts.append(f"--min-base-quality {params['min_base_quality']}")
-    if params.get('min_supporting_allele_qsum') is not None:
-        opts.append(f"--min-supporting-allele-qsum {params['min_supporting_allele_qsum']}")
-    if params.get('min_supporting_mapping_qsum') is not None:
-        opts.append(f"--min-supporting-mapping-qsum {params['min_supporting_mapping_qsum']}")
-    if params.get('mismatch_base_quality_threshold') is not None:
-        opts.append(f"--mismatch-base-quality-threshold {params['mismatch_base_quality_threshold']}")
-    if params.get('read_mismatch_limit') is not None:
-        opts.append(f"--read-mismatch-limit {params['read_mismatch_limit']}")
-    if params.get('read_max_mismatch_fraction') is not None:
-        opts.append(f"--read-max-mismatch-fraction {params['read_max_mismatch_fraction']}")
-    if params.get('read_snp_limit') is not None:
-        opts.append(f"--read-snp-limit {params['read_snp_limit']}")
-    if params.get('read_indel_limit') is not None:
-        opts.append(f"--read-indel-limit {params['read_indel_limit']}")
-    if params.get('indel_exclusion_window') is not None:
-        opts.append(f"--indel-exclusion-window {params['indel_exclusion_window']}")
-    if params.get('min_repeat_entropy') is not None:
-        opts.append(f"--min-repeat-entropy {params['min_repeat_entropy']}")
-    if params.get('min_alternate_fraction') is not None:
-        opts.append(f"--min-alternate-fraction {params['min_alternate_fraction']}")
-    if params.get('min_alternate_count') is not None:
-        opts.append(f"--min-alternate-count {params['min_alternate_count']}")
-    if params.get('min_alternate_qsum') is not None:
-        opts.append(f"--min-alternate-qsum {params['min_alternate_qsum']}")
-    if params.get('min_alternate_total') is not None:
-        opts.append(f"--min-alternate-total {params['min_alternate_total']}")
-    if params.get('min_coverage') is not None:
-        opts.append(f"--min-coverage {params['min_coverage']}")
-    if params.get('max_coverage') is not None:
-        opts.append(f"--max-coverage {params['max_coverage']}")
-    if params.get('no_partial_observations'):
-        opts.append("--no-partial-observations")
-    if params.get('ploidy') is not None:
-        opts.append(f"--ploidy {params['ploidy']}")
-    if params.get('pooled_discrete'):
-        opts.append("--pooled-discrete")
-    if params.get('pooled_continuous'):
-        opts.append("--pooled-continuous")
-    if params.get('use_duplicate_reads'):
-        opts.append("--use-duplicate-reads")
-    if params.get('no_mnps'):
-        opts.append("--no-mnps")
-    if params.get('no_complex'):
-        opts.append("--no-complex")
-    if params.get('no_snps'):
-        opts.append("--no-snps")
-    if params.get('no_indels'):
-        opts.append("--no-indels")
-    if params.get('max_complex_gap') is not None:
-        opts.append(f"--max-complex-gap {params['max_complex_gap']}")
-    if params.get('haplotype_length') is not None:
-        opts.append(f"--haplotype-length {params['haplotype_length']}")
-    if params.get('min_repeat_length') is not None:
-        opts.append(f"--min-repeat-length {params['min_repeat_length']}")
-    if params.get('min_repeat_entropy_for_detection') is not None:
-        opts.append(f"--min-repeat-entropy {params['min_repeat_entropy_for_detection']}")
-
-# Population model parameters
-if 'population_model_parameters' in config:
-    params = config['population_model_parameters']
+    if chunk_id < remainder:
+        current_chunk_size = chunk_size + 1
+    else:
+        current_chunk_size = chunk_size
     
-    if params.get('theta') is not None:
-        opts.append(f"--theta {params['theta']}")
-    if params.get('posterior_integration_limits') is not None:
-        opts.append(f"--posterior-integration-limits {params['posterior_integration_limits']}")
-    if params.get('use_reference_allele'):
-        opts.append("--use-reference-allele")
-    if params.get('gvcf'):
-        opts.append("--gvcf")
-    if params.get('gvcf_chunk') is not None:
-        opts.append(f"--gvcf-chunk {params['gvcf_chunk']}")
-
-# Genotype likelihood parameters
-if 'genotype_likelihood_parameters' in config:
-    params = config['genotype_likelihood_parameters']
+    chunk_end = chunk_start + current_chunk_size - 1
     
-    if params.get('base_quality_cap') is not None:
-        opts.append(f"--base-quality-cap {params['base_quality_cap']}")
-    if params.get('prob_contamination') is not None:
-        opts.append(f"--prob-contamination {params['prob_contamination']}")
-    if params.get('legacy_gls'):
-        opts.append("--legacy-gls")
-    if params.get('contamination_estimates') is not None:
-        opts.append(f"--contamination-estimates {params['contamination_estimates']}")
-
-# Reporting parameters
-if 'reporting_parameters' in config:
-    params = config['reporting_parameters']
+    print(f"\\nChunk {chunk_id}: global positions {chunk_start:,} - {chunk_end:,} ({current_chunk_size:,} bp)")
     
-    if params.get('genotype_qualities'):
-        opts.append("--genotype-qualities")
-    if params.get('report_genotype_likelihood_max'):
-        opts.append("--report-genotype-likelihood-max")
-    if params.get('genotyping_max_iterations') is not None:
-        opts.append(f"--genotyping-max-iterations {params['genotyping_max_iterations']}")
-    if params.get('genotyping_max_banddepth') is not None:
-        opts.append(f"--genotyping-max-banddepth {params['genotyping_max_banddepth']}")
-    if params.get('exclude_unobserved_genotypes'):
-        opts.append("--exclude-unobserved-genotypes")
-    if params.get('genotype_variant_threshold') is not None:
-        opts.append(f"--genotype-variant-threshold {params['genotype_variant_threshold']}")
-    if params.get('use_mapping_quality'):
-        opts.append("--use-mapping-quality")
-    if params.get('harmonic_indel_quality'):
-        opts.append("--harmonic-indel-quality")
-    if params.get('read_dependence_factor') is not None:
-        opts.append(f"--read-dependence-factor {params['read_dependence_factor']}")
-
-# Additional options
-if 'additional_options' in config:
-    params = config['additional_options']
+    # Find all contigs that overlap with this chunk
+    chunk_regions_list = []
     
-    if params.get('debug'):
-        opts.append("--debug")
-    if params.get('dd'):
-        opts.append("--dd")
+    current_pos = chunk_start
+    while current_pos <= chunk_end:
+        # Find which contig this position is in
+        contig_found = False
+        for chrom, contig_start, contig_end in cumulative_pos:
+            if contig_start <= current_pos <= contig_end:
+                # This contig overlaps with our chunk
+                
+                # Calculate the overlap region
+                region_start_global = max(current_pos, contig_start)
+                region_end_global = min(chunk_end, contig_end)
+                
+                # Convert to local coordinates (1-based)
+                region_start_local = region_start_global - contig_start + 1
+                region_end_local = region_end_global - contig_start + 1
+                
+                # Add BED entry (0-based start, 1-based end)
+                bed_start = region_start_local - 1
+                bed_end = region_end_local
+                chunks.append(f"{chrom}\\t{bed_start}\\t{bed_end}")
+                
+                # Add region for freebayes (1-based)
+                region = f"{chrom}:{region_start_local}-{region_end_local}"
+                chunk_regions_list.append(region)
+                
+                region_length = region_end_local - region_start_local + 1
+                print(f"  {region} ({region_length:,} bp)")
+                
+                # Move to next position
+                current_pos = contig_end + 1
+                contig_found = True
+                break
+        
+        if not contig_found:
+            print(f"ERROR: Could not find contig for position {current_pos}")
+            break
+    
+    chunk_regions[f"chunk_{chunk_id}"] = chunk_regions_list
+    
+    total_chunk_bp = sum(
+        int(region.split(':')[1].split('-')[1]) - int(region.split(':')[1].split('-')[0]) + 1 
+        for region in chunk_regions_list
+    )
+    print(f"  Total: {len(chunk_regions_list)} regions, {total_chunk_bp:,} bp")
 
-# Print the options
-print(' '.join(opts))
+# Write BED file
+with open('chunks.bed', 'w') as f:
+    for chunk in chunks:
+        f.write(f"{chunk}\\n")
+
+# Write chunk regions file for freebayes
+with open('chunk_regions.txt', 'w') as f:
+    for chunk_id, regions in chunk_regions.items():
+        f.write(f"{chunk_id}\\t{','.join(regions)}\\n")
+
+print(f"\\nSummary:")
+print(f"- Created exactly {num_chunks} logical chunks")
+print(f"- Total BED regions: {len(chunks)}")
+print(f"- Chunk regions file created for freebayes processing")
+
+# Verify coverage
+total_covered = 0
+for chunk in chunks:
+    parts = chunk.split('\\t')
+    start, end = int(parts[1]), int(parts[2])
+    total_covered += (end - start)
+
+print(f"- Total coverage: {total_covered:,} bp ({100*total_covered/total_length:.1f}% of genome)")
+
+if total_covered == total_length:
+    print("✅ SUCCESS: Complete genome coverage with exact chunk count!")
+else:
+    print(f"⚠️  Coverage difference: {total_length - total_covered:,} bp")
 PYTHON_SCRIPT
-)
-        
-        echo "Freebayes options: \$FREEBAYES_OPTS"
-    else
-        echo "No freebayes config provided, using default parameters"
-    fi
-    
-    # Run freebayes with targets file
-    echo "Running freebayes on chunk ${chunk_id}..."
-    
-    freebayes \\
-        --fasta-reference ${reference} \\
-        --targets chunk_targets.bed \\
-        ${bam_args} \\
-        \$FREEBAYES_OPTS \\
-        --vcf chunk_${chunk_id}.vcf
-    
-    # Check if freebayes produced output
-    if [ -s chunk_${chunk_id}.vcf ]; then
-        echo "Freebayes completed successfully for chunk ${chunk_id}"
-        
-        # Count variants found
-        variant_count=\$(grep -v '^#' chunk_${chunk_id}.vcf | wc -l)
-        echo "Found \$variant_count variants in chunk ${chunk_id}"
-        
-        # Compress and index the VCF
-        bgzip -c chunk_${chunk_id}.vcf > chunk_${chunk_id}.vcf.gz
-        tabix -p vcf chunk_${chunk_id}.vcf.gz
-        
-        echo "Successfully compressed and indexed chunk ${chunk_id}"
-    else
-        echo "No variants found in chunk ${chunk_id}, creating empty VCF"
-        
-        # Create minimal VCF header for empty chunks
-        cat > chunk_${chunk_id}.vcf << 'VCF_HEADER'
-##fileformat=VCFv4.2
-##reference=${reference}
-##source=freebayes
-##INFO=<ID=DP,Number=1,Type=Integer,Description="Total read depth">
-##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
-##FORMAT=<ID=DP,Number=1,Type=Integer,Description="Read depth">
-#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO
-VCF_HEADER
-        
-        bgzip -c chunk_${chunk_id}.vcf > chunk_${chunk_id}.vcf.gz
-        tabix -p vcf chunk_${chunk_id}.vcf.gz
-    fi
-    
-    # Clean up intermediate files
-    rm -f chunk_${chunk_id}.vcf regions_list.txt chunk_targets.bed
-    
-    echo "Chunk ${chunk_id} processing complete"
+
+    python3 create_chunks.py
     """
 }
