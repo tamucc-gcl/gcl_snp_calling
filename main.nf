@@ -124,17 +124,17 @@ workflow {
         .filter { it != null }  // Remove null entries
     
     // Step 3: Run freebayes on each chunk in parallel
-    // Use combine to create proper input structure for parallel processing
-    freebayes_input = chunks_ch
+    // Create tuples with all inputs for each chunk
+    freebayes_inputs = chunks_ch
         .combine(reference_ch)
         .combine(bam_files) 
         .combine(bam_indices_ch)
         .map { chunk_tuple, ref, bams, indices ->
-            // Restructure to match process input signature
-            return [ref, bams, indices, chunk_tuple]
+            // Create tuple: [reference, bams, indices, chunk_id, regions_string]
+            return [ref, bams, indices, chunk_tuple[0], chunk_tuple[1]]
         }
     
-    vcf_chunks = freebayes_input | FREEBAYES_CHUNK
+    vcf_chunks = FREEBAYES_CHUNK(freebayes_inputs)
     
     // Step 4: Combine all VCF files
     all_vcfs = vcf_chunks.map { chunk_id, vcf -> vcf }.collect()
