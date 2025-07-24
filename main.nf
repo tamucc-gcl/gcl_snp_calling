@@ -82,6 +82,7 @@ workflow {
     
     // Create input channels
     reference_ch = Channel.fromPath(params.reference, checkIfExists: true)
+    reference_fai_ch = Channel.fromPath("${params.reference}.fai", checkIfExists: true)
     bam_ch = Channel.fromPath(params.bams, checkIfExists: true)
     
     // Config file channel
@@ -108,13 +109,17 @@ workflow {
         .filter { it != null }
     
     // Step 3: Run freebayes on each chunk
-    // Use a simpler approach - pass channels directly to process
-    vcf_chunks = FREEBAYES_CHUNK(
-        chunk_ch,
-        reference_ch,
-        bam_ch.collect(),
-        config_ch.collect().ifEmpty([])
-    )
+    // Each chunk process gets all the inputs it needs
+    vcf_chunks = chunk_ch
+        .combine(reference_ch)
+        .combine(reference_fai_ch)
+        .combine(bam_ch.collect())
+        .combine(config_ch.collect().ifEmpty([]))
+        .map { chunk_info, ref, ref_fai, bams, config ->
+            // Return tuple for process: [chunk_info, ref, ref_fai, bams, config]
+            return [chunk_info, ref, ref_fai, bams, config]
+        }
+        | FREEBAYES_CHUNK
     
     // Step 4: Combine all VCF files
     all_vcfs = vcf_chunks.map { chunk_id, vcf -> vcf }.collect()
