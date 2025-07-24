@@ -60,20 +60,17 @@ if (params.num_chunks <= 0) {
 workflow PROCESS_CHUNKS {
     take:
     chunks_ch        // Channel of [chunk_id, regions_string]
-    reference        // Reference genome file
-    reference_fai    // Reference genome index
-    all_bams         // List of all BAM files
-    all_bais         // List of all BAI files  
-    config_file      // Config file (or empty)
+    reference        // Reference genome file (single file)
+    reference_fai    // Reference genome index (single file)
+    all_bams         // List of all BAM files (collected)
+    all_bais         // List of all BAI files (collected)
+    config_file      // Config file (single file)
     
     main:
-    // Create input tuples for each chunk
-    chunk_inputs = chunks_ch
-        .combine(reference)
-        .combine(reference_fai)  
-        .combine(all_bams)
-        .combine(all_bais)
-        .combine(config_file)
+    // Create input tuples by mapping each chunk to include all files
+    chunk_inputs = chunks_ch.map { chunk_info ->
+        return [chunk_info, reference, reference_fai, all_bams, all_bais, config_file]
+    }
     
     vcf_results = FREEBAYES_CHUNK(chunk_inputs)
     

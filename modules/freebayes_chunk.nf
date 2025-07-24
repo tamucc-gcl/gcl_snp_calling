@@ -3,7 +3,7 @@
 process FREEBAYES_CHUNK {
     
     input:
-    tuple val(chunk_info), path(reference), path(reference_fai), val(bam_files), val(bai_files), path(config_file)
+    tuple val(chunk_info), path(reference), path(reference_fai), path('bam_dir/*'), path('bai_dir/*'), path(config_file)
     
     output:
     tuple val("${chunk_info[0]}"), path("chunk_${chunk_info[0]}.vcf.gz")
@@ -19,19 +19,28 @@ process FREEBAYES_CHUNK {
     echo "Reference FAI: ${reference_fai}"
     echo "Config provided: ${has_config}"
     
-    # Count BAM files - they come as a list in the variable
-    echo "Total BAM files: ${bam_files.size()}"
-    echo "BAM files: ${bam_files.collect{it.name}.join(', ')}"
+    # Copy BAM files from staged directory
+    if [ -d "bam_dir" ]; then
+        cp bam_dir/*.bam . 2>/dev/null || echo "No BAM files to copy"
+        echo "Copied BAM files:"
+        ls -la *.bam 2>/dev/null
+    fi
     
-    # Create symlinks to BAM files in work directory
-    ${bam_files.collect { "ln -sf ${it} ." }.join('\n    ')}
+    # Copy BAI files from staged directory
+    if [ -d "bai_dir" ]; then
+        cp bai_dir/*.bai . 2>/dev/null || echo "No BAI files to copy"
+        echo "Copied BAI files:"
+        ls -la *.bai 2>/dev/null
+    fi
     
-    # Create symlinks to BAI files in work directory  
-    ${bai_files.collect { "ln -sf ${it} ." }.join('\n    ')}
+    # Count BAM files
+    BAM_COUNT=\$(ls -1 *.bam 2>/dev/null | wc -l)
+    echo "Total BAM files: \$BAM_COUNT"
     
-    # List files to verify
-    echo "Files in work directory:"
-    ls -la *.bam *.bai 2>/dev/null || echo "Some files missing"
+    if [ \$BAM_COUNT -eq 0 ]; then
+        echo "ERROR: No BAM files found!"
+        exit 1
+    fi
     
     # Create BED file for regions
     echo "${regions_string}" | tr ',' '\\n' > regions.txt
