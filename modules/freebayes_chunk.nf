@@ -1,9 +1,9 @@
-// modules/freebayes_chunk.nf - Simple, clean approach
+// modules/freebayes_chunk.nf - Back to basics, working approach
 
 process FREEBAYES_CHUNK {
     
     input:
-    tuple val(chunk_info), path(reference), path(reference_fai), path('bam_dir/*'), path('bai_dir/*'), path(config_file)
+    tuple val(chunk_info), path(reference), path(reference_fai), path(bams), path(config)
     
     output:
     tuple val("${chunk_info[0]}"), path("chunk_${chunk_info[0]}.vcf.gz")
@@ -11,7 +11,8 @@ process FREEBAYES_CHUNK {
     script:
     def chunk_id = chunk_info[0]
     def regions_string = chunk_info[1]
-    def has_config = config_file.name != "NO_CONFIG"
+    def config_file = config.size() > 0 ? config[0] : null
+    def has_config = config_file != null && config_file.name != "NO_CONFIG"
     """
     echo "Processing chunk ${chunk_id}"
     echo "Regions: ${regions_string}"
@@ -19,19 +20,9 @@ process FREEBAYES_CHUNK {
     echo "Reference FAI: ${reference_fai}"
     echo "Config provided: ${has_config}"
     
-    # Copy BAM files from staged directory
-    if [ -d "bam_dir" ]; then
-        cp bam_dir/*.bam . 2>/dev/null || echo "No BAM files to copy"
-        echo "Copied BAM files:"
-        ls -la *.bam 2>/dev/null
-    fi
-    
-    # Copy BAI files from staged directory
-    if [ -d "bai_dir" ]; then
-        cp bai_dir/*.bai . 2>/dev/null || echo "No BAI files to copy"
-        echo "Copied BAI files:"
-        ls -la *.bai 2>/dev/null
-    fi
+    # List BAM files
+    echo "BAM files in work directory:"
+    ls -la *.bam 2>/dev/null || echo "No BAM files found"
     
     # Count BAM files
     BAM_COUNT=\$(ls -1 *.bam 2>/dev/null | wc -l)
@@ -41,6 +32,14 @@ process FREEBAYES_CHUNK {
         echo "ERROR: No BAM files found!"
         exit 1
     fi
+    
+    # Ensure BAM indices exist
+    for bam in *.bam; do
+        if [ -f "\$bam" ] && [ ! -f "\${bam}.bai" ]; then
+            echo "Creating index for \$bam"
+            samtools index "\$bam"
+        fi
+    done
     
     # Create BED file for regions
     echo "${regions_string}" | tr ',' '\\n' > regions.txt
@@ -72,52 +71,57 @@ process FREEBAYES_CHUNK {
     
     # Add config options if provided
     if [ "${has_config}" = "true" ]; then
-        echo "Loading config from ${config_file}"
+        echo "Loading config from \${config_file:-${config_file}}"
         
-        # Parse key config options
-        MIN_MAPQ=\$(python3 -c "
+        CONFIG_FILE=\$(ls *.json 2>/dev/null | head -n1)
+        if [ -n "\$CONFIG_FILE" ]; then
+            echo "Found config file: \$CONFIG_FILE"
+            
+            # Parse key config options
+            MIN_MAPQ=\$(python3 -c "
 import json
 try:
-    with open('${config_file}') as f:
+    with open('\$CONFIG_FILE') as f:
         config = json.load(f)
     print(config.get('algorithm_parameters', {}).get('min_mapping_quality', 20))
 except:
     print(20)
 " 2>/dev/null)
-        
-        MIN_BASEQ=\$(python3 -c "
+            
+            MIN_BASEQ=\$(python3 -c "
 import json
 try:
-    with open('${config_file}') as f:
+    with open('\$CONFIG_FILE') as f:
         config = json.load(f)
     print(config.get('algorithm_parameters', {}).get('min_base_quality', 20))
 except:
     print(20)
 " 2>/dev/null)
-        
-        MIN_ALT_FRAC=\$(python3 -c "
+            
+            MIN_ALT_FRAC=\$(python3 -c "
 import json
 try:
-    with open('${config_file}') as f:
+    with open('\$CONFIG_FILE') as f:
         config = json.load(f)
     print(config.get('algorithm_parameters', {}).get('min_alternate_fraction', 0.05))
 except:
     print(0.05)
 " 2>/dev/null)
-        
-        MIN_ALT_COUNT=\$(python3 -c "
+            
+            MIN_ALT_COUNT=\$(python3 -c "
 import json
 try:
-    with open('${config_file}') as f:
+    with open('\$CONFIG_FILE') as f:
         config = json.load(f)
     print(config.get('algorithm_parameters', {}).get('min_alternate_count', 2))
 except:
     print(2)
 " 2>/dev/null)
-        
-        FREEBAYES_CMD="\$FREEBAYES_CMD --min-mapping-quality \$MIN_MAPQ --min-base-quality \$MIN_BASEQ --min-alternate-fraction \$MIN_ALT_FRAC --min-alternate-count \$MIN_ALT_COUNT"
-        
-        echo "Using config parameters: mapq=\$MIN_MAPQ, baseq=\$MIN_BASEQ, alt_frac=\$MIN_ALT_FRAC, alt_count=\$MIN_ALT_COUNT"
+            
+            FREEBAYES_CMD="\$FREEBAYES_CMD --min-mapping-quality \$MIN_MAPQ --min-base-quality \$MIN_BASEQ --min-alternate-fraction \$MIN_ALT_FRAC --min-alternate-count \$MIN_ALT_COUNT"
+            
+            echo "Using config parameters: mapq=\$MIN_MAPQ, baseq=\$MIN_BASEQ, alt_frac=\$MIN_ALT_FRAC, alt_count=\$MIN_ALT_COUNT"
+        fi
     else
         echo "Using default freebayes parameters"
     fi
