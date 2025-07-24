@@ -67,10 +67,15 @@ workflow PROCESS_CHUNKS {
     config_file      // Config file (or empty)
     
     main:
-    // Each chunk gets all the files it needs
-    vcf_results = chunks_ch.map { chunk_info ->
-        return [chunk_info, reference, reference_fai, all_bams, all_bais, config_file]
-    } | FREEBAYES_CHUNK
+    // Create input tuples for each chunk
+    chunk_inputs = chunks_ch
+        .combine(reference)
+        .combine(reference_fai)  
+        .combine(all_bams)
+        .combine(all_bais)
+        .combine(config_file)
+    
+    vcf_results = FREEBAYES_CHUNK(chunk_inputs)
     
     emit:
     vcf_results
