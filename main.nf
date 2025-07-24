@@ -66,41 +66,44 @@ workflow {
     log.info "Freebayes config:  ${params.freebayes_config ?: 'Using default parameters'}"
     log.info "================================================================"
     
-    // Simple channel creation
-    reference_ch = Channel.fromPath(params.reference, checkIfExists: true)
-    reference_fai_ch = Channel.fromPath("${params.reference}.fai", checkIfExists: true)
-    bam_ch = Channel.fromPath(params.bams, checkIfExists: true)
+    // Create channels - use .first() to make them value channels that can be reused
+    reference_ch = Channel.fromPath(params.reference, checkIfExists: true).first()
+    reference_fai_ch = Channel.fromPath("${params.reference}.fai", checkIfExists: true).first()
+    
+    // Collect all BAM files into a single list
+    bam_files = Channel.fromPath(params.bams, checkIfExists: true).collect()
     
     // Config file
     if (params.freebayes_config) {
-        config_ch = Channel.fromPath(params.freebayes_config, checkIfExists: true)
+        config_ch = Channel.fromPath(params.freebayes_config, checkIfExists: true).first()
     } else {
-        config_ch = Channel.empty()
+        config_ch = Channel.value([])
     }
     
     // Step 1: Create genome chunks
     chunks = CREATE_CHUNKS(reference_ch, params.num_chunks)
     chunk_regions = chunks[1]
     
-    // Step 2: Parse chunks
+    // Step 2: Parse chunks into individual emissions
     chunk_ch = chunk_regions
         .splitText()
         .map { line ->
             def parts = line.trim().split('\t')
             if (parts.size() >= 2) {
-                return [parts[0], parts[1]]  // [chunk_id, regions_string]
+                return tuple(parts[0], parts[1])  // [chunk_id, regions_string]
             }
             return null
         }
         .filter { it != null }
     
     // Step 3: For each chunk, run freebayes with ALL inputs
+    // Combine the chunk channel with the other inputs properly
     vcf_chunks = FREEBAYES_CHUNK(
         chunk_ch,
         reference_ch,
         reference_fai_ch,
-        bam_ch.collect(),
-        config_ch.collect().ifEmpty([])
+        bam_files,
+        config_ch
     )
     
     // Step 4: Combine VCFs
