@@ -10,6 +10,9 @@ process FREEBAYES_CHUNK {
     
     script:
     def has_config = config_file.toString() != "NO_CONFIG"
+    def bam_symlinks = bam_files.collect { "ln -sf ${it} ${it.name}" }.join('\n    ')
+    def bai_symlinks = bam_files.collect { "ln -sf ${it}.bai ${it.name}.bai 2>/dev/null || echo 'No BAI for ${it.name}'" }.join('\n    ')
+    def bam_count = bam_files.size()
     """
     echo "Processing chunk ${chunk_id}"
     echo "Regions: ${regions_string}"
@@ -20,10 +23,10 @@ process FREEBAYES_CHUNK {
     ln -sf ${reference_fai} genome.fa.fai
     
     # Create symlinks to all BAM files
-    ${bam_files.collect { "ln -sf ${it} ${it.name}" }.join('\n    ')}
+    ${bam_symlinks}
     
     # Create symlinks to BAI files (they should exist alongside BAM files)
-    ${bam_files.collect { "ln -sf ${it}.bai ${it.name}.bai 2>/dev/null || echo 'No BAI for ${it.name}'" }.join('\n    ')}
+    ${bai_symlinks}
     
     echo "BAM files in work directory:"
     ls -la *.bam 2>/dev/null || echo "No BAM files found"
@@ -33,7 +36,7 @@ process FREEBAYES_CHUNK {
     
     # Count BAM files
     BAM_COUNT=\$(ls -1 *.bam 2>/dev/null | wc -l)
-    echo "Total BAM files: \$BAM_COUNT (expected: ${bam_files.size()})"
+    echo "Total BAM files: \$BAM_COUNT (expected: ${bam_count})"
     
     if [ \$BAM_COUNT -eq 0 ]; then
         echo "ERROR: No BAM files found!"
