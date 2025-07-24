@@ -1,39 +1,39 @@
-// modules/freebayes_chunk.nf - COMPLETELY REWRITTEN for proper input handling
+// modules/freebayes_chunk.nf - Clean, simple approach
 
 process FREEBAYES_CHUNK {
-    tag "chunk_${chunk_id}"
+    tag "chunk_${chunk_info[0]}"
     
     input:
-    tuple val(chunk_id), val(regions_string), path(reference_fa), path(reference_fai), path(bam_files), path(bai_files), path(config_file)
+    val chunk_info          // [chunk_id, regions_string]
+    path reference          // reference genome FASTA
+    path bams               // list of BAM files
+    path config             // config file (optional, could be empty)
     
     output:
-    tuple val(chunk_id), path("chunk_${chunk_id}.vcf.gz")
+    tuple val(chunk_info[0]), path("chunk_${chunk_info[0]}.vcf.gz")
     
     script:
-    def config_name = config_file.name
-    def is_config_provided = (config_name != "NO_CONFIG_FILE")
+    def chunk_id = chunk_info[0]
+    def regions_string = chunk_info[1]
+    def config_file = config.size() > 0 ? config[0] : null
+    def has_config = config_file != null
     """
-    # Debug information
     echo "Processing chunk ${chunk_id}"
-    echo "Reference FA: ${reference_fa}"
-    echo "Reference FAI: ${reference_fai}"
-    echo "Config file: ${config_file} (name: ${config_name})"
-    echo "Is config provided: ${is_config_provided}"
     echo "Regions: ${regions_string}"
+    echo "Reference: ${reference}"
+    echo "Config provided: ${has_config}"
     
-    # Count and list BAM files
-    echo "BAM files received:"
-    ls -la *.bam 2>/dev/null || echo "No BAM files found via ls"
-    
-    # Count actual files
-    BAM_COUNT=0
-    for f in *.bam; do
-        if [[ -f "\$f" ]]; then
-            echo "Found BAM: \$f"
-            BAM_COUNT=\$((BAM_COUNT + 1))
+    # List BAM files
+    echo "BAM files:"
+    for bam in *.bam; do
+        if [ -f "\$bam" ]; then
+            echo "  \$bam"
         fi
     done
-    echo "Total BAM files found: \$BAM_COUNT"
+    
+    # Count BAM files
+    BAM_COUNT=\$(ls -1 *.bam 2>/dev/null | wc -l)
+    echo "Total BAM files: \$BAM_COUNT"
     
     if [ \$BAM_COUNT -eq 0 ]; then
         echo "ERROR: No BAM files found!"
@@ -42,246 +42,129 @@ process FREEBAYES_CHUNK {
     
     # Ensure BAM indices exist
     for bam in *.bam; do
-        if [[ -f "\$bam" ]]; then
-            if [[ ! -f "\${bam}.bai" ]] && [[ ! -f "\${bam%.bam}.bai" ]]; then
-                echo "Creating index for \$bam"
-                samtools index "\$bam"
-            fi
+        if [ -f "\$bam" ] && [ ! -f "\${bam}.bai" ]; then
+            echo "Creating index for \$bam"
+            samtools index "\$bam"
         fi
     done
     
-    # Create BED file for this chunk
-    echo "${regions_string}" | tr ',' '\\n' > regions_list.txt
+    # Create BED file for regions
+    echo "${regions_string}" | tr ',' '\\n' > regions.txt
     
-    touch chunk_targets.bed
-    while IFS= read -r region; do
-        if [[ -n "\$region" ]]; then
-            # Parse region format: chr:start-end
+    > chunk.bed
+    while read -r region; do
+        if [ -n "\$region" ]; then
             chrom=\$(echo "\$region" | cut -d':' -f1)
-            positions=\$(echo "\$region" | cut -d':' -f2)
-            start=\$(echo "\$positions" | cut -d'-' -f1)
-            end=\$(echo "\$positions" | cut -d'-' -f2)
-            
-            # Convert to 0-based BED format
+            pos=\$(echo "\$region" | cut -d':' -f2)
+            start=\$(echo "\$pos" | cut -d'-' -f1)
+            end=\$(echo "\$pos" | cut -d'-' -f2)
             bed_start=\$((start - 1))
-            
-            echo -e "\$chrom\\t\$bed_start\\t\$end" >> chunk_targets.bed
-            echo "  Added region: \$chrom:\$start-\$end (BED: \$chrom:\$bed_start-\$end)"
+            echo -e "\$chrom\\t\$bed_start\\t\$end" >> chunk.bed
         fi
-    done < regions_list.txt
+    done < regions.txt
     
-    echo "Created BED file for chunk ${chunk_id}:"
-    cat chunk_targets.bed
+    echo "BED file contents:"
+    cat chunk.bed
     
-    if [[ ! -s chunk_targets.bed ]]; then
-        echo "ERROR: BED file is empty for chunk ${chunk_id}"
-        exit 1
-    fi
+    # Build freebayes command
+    FREEBAYES_CMD="freebayes --fasta-reference ${reference} --targets chunk.bed"
     
-    # Handle freebayes configuration
-    FREEBAYES_OPTS=""
+    # Add BAM files
+    for bam in *.bam; do
+        if [ -f "\$bam" ]; then
+            FREEBAYES_CMD="\$FREEBAYES_CMD --bam \$bam"
+        fi
+    done
     
-    if [[ "${is_config_provided}" == "true" ]] && [[ -f "${config_file}" ]] && [[ "${config_file}" == *.json ]]; then
-        echo "Loading freebayes configuration from ${config_file}"
+    # Add config options if provided
+    if [ "${has_config}" = "true" ] && [ -f "${config_file}" ]; then
+        echo "Loading config from ${config_file}"
         
-        # Parse JSON config
-        FREEBAYES_OPTS=\$(python3 << 'EOF'
+        # Parse basic config options (simplified)
+        MIN_MAPQ=\$(python3 -c "
 import json
-import sys
-
 try:
-    with open('${config_file}', 'r') as f:
+    with open('${config_file}') as f:
         config = json.load(f)
-    
-    opts = []
-    
-    # Algorithm parameters
-    if 'algorithm_parameters' in config:
-        params = config['algorithm_parameters']
+    print(config.get('algorithm_parameters', {}).get('min_mapping_quality', 20))
+except:
+    print(20)
+" 2>/dev/null)
         
-        for param, flag in [
-            ('min_mapping_quality', '--min-mapping-quality'),
-            ('min_base_quality', '--min-base-quality'),
-            ('min_supporting_allele_qsum', '--min-supporting-allele-qsum'),
-            ('min_supporting_mapping_qsum', '--min-supporting-mapping-qsum'),
-            ('mismatch_base_quality_threshold', '--mismatch-base-quality-threshold'),
-            ('read_mismatch_limit', '--read-mismatch-limit'),
-            ('read_max_mismatch_fraction', '--read-max-mismatch-fraction'),
-            ('read_snp_limit', '--read-snp-limit'),
-            ('read_indel_limit', '--read-indel-limit'),
-            ('indel_exclusion_window', '--indel-exclusion-window'),
-            ('min_repeat_entropy', '--min-repeat-entropy'),
-            ('min_alternate_fraction', '--min-alternate-fraction'),
-            ('min_alternate_count', '--min-alternate-count'),
-            ('min_alternate_qsum', '--min-alternate-qsum'),
-            ('min_alternate_total', '--min-alternate-total'),
-            ('min_coverage', '--min-coverage'),
-            ('max_coverage', '--max-coverage'),
-            ('ploidy', '--ploidy'),
-            ('max_complex_gap', '--max-complex-gap'),
-            ('haplotype_length', '--haplotype-length'),
-            ('min_repeat_length', '--min-repeat-length'),
-            ('min_repeat_entropy_for_detection', '--min-repeat-entropy')
-        ]:
-            if params.get(param) is not None:
-                opts.append(f"{flag} {params[param]}")
+        MIN_BASEQ=\$(python3 -c "
+import json
+try:
+    with open('${config_file}') as f:
+        config = json.load(f)
+    print(config.get('algorithm_parameters', {}).get('min_base_quality', 20))
+except:
+    print(20)
+" 2>/dev/null)
         
-        # Boolean flags
-        for param, flag in [
-            ('no_partial_observations', '--no-partial-observations'),
-            ('pooled_discrete', '--pooled-discrete'),
-            ('pooled_continuous', '--pooled-continuous'),
-            ('use_duplicate_reads', '--use-duplicate-reads'),
-            ('no_mnps', '--no-mnps'),
-            ('no_complex', '--no-complex'),
-            ('no_snps', '--no-snps'),
-            ('no_indels', '--no-indels')
-        ]:
-            if params.get(param):
-                opts.append(flag)
-    
-    # Population model parameters
-    if 'population_model_parameters' in config:
-        params = config['population_model_parameters']
+        MIN_ALT_FRAC=\$(python3 -c "
+import json
+try:
+    with open('${config_file}') as f:
+        config = json.load(f)
+    print(config.get('algorithm_parameters', {}).get('min_alternate_fraction', 0.05))
+except:
+    print(0.05)
+" 2>/dev/null)
         
-        for param, flag in [
-            ('theta', '--theta'),
-            ('posterior_integration_limits', '--posterior-integration-limits'),
-            ('gvcf_chunk', '--gvcf-chunk')
-        ]:
-            if params.get(param) is not None:
-                opts.append(f"{flag} {params[param]}")
+        MIN_ALT_COUNT=\$(python3 -c "
+import json
+try:
+    with open('${config_file}') as f:
+        config = json.load(f)
+    print(config.get('algorithm_parameters', {}).get('min_alternate_count', 2))
+except:
+    print(2)
+" 2>/dev/null)
         
-        for param, flag in [
-            ('use_reference_allele', '--use-reference-allele'),
-            ('gvcf', '--gvcf')
-        ]:
-            if params.get(param):
-                opts.append(flag)
-    
-    # Genotype likelihood parameters
-    if 'genotype_likelihood_parameters' in config:
-        params = config['genotype_likelihood_parameters']
+        FREEBAYES_CMD="\$FREEBAYES_CMD --min-mapping-quality \$MIN_MAPQ --min-base-quality \$MIN_BASEQ --min-alternate-fraction \$MIN_ALT_FRAC --min-alternate-count \$MIN_ALT_COUNT"
         
-        for param, flag in [
-            ('base_quality_cap', '--base-quality-cap'),
-            ('prob_contamination', '--prob-contamination'),
-            ('contamination_estimates', '--contamination-estimates')
-        ]:
-            if params.get(param) is not None:
-                opts.append(f"{flag} {params[param]}")
-        
-        if params.get('legacy_gls'):
-            opts.append('--legacy-gls')
-    
-    # Reporting parameters
-    if 'reporting_parameters' in config:
-        params = config['reporting_parameters']
-        
-        for param, flag in [
-            ('genotyping_max_iterations', '--genotyping-max-iterations'),
-            ('genotyping_max_banddepth', '--genotyping-max-banddepth'),
-            ('genotype_variant_threshold', '--genotype-variant-threshold'),
-            ('read_dependence_factor', '--read-dependence-factor')
-        ]:
-            if params.get(param) is not None:
-                opts.append(f"{flag} {params[param]}")
-        
-        for param, flag in [
-            ('genotype_qualities', '--genotype-qualities'),
-            ('report_genotype_likelihood_max', '--report-genotype-likelihood-max'),
-            ('exclude_unobserved_genotypes', '--exclude-unobserved-genotypes'),
-            ('use_mapping_quality', '--use-mapping-quality'),
-            ('harmonic_indel_quality', '--harmonic-indel-quality')
-        ]:
-            if params.get(param):
-                opts.append(flag)
-    
-    # Additional options
-    if 'additional_options' in config:
-        params = config['additional_options']
-        
-        for param, flag in [
-            ('debug', '--debug'),
-            ('dd', '--dd')
-        ]:
-            if params.get(param):
-                opts.append(flag)
-    
-    print(' '.join(opts))
-
-except Exception as e:
-    print(f"Error parsing config: {e}", file=sys.stderr)
-    sys.exit(1)
-EOF
-)
-        
-        echo "Freebayes options from config: \$FREEBAYES_OPTS"
+        echo "Using config parameters: mapq=\$MIN_MAPQ, baseq=\$MIN_BASEQ, alt_frac=\$MIN_ALT_FRAC, alt_count=\$MIN_ALT_COUNT"
     else
         echo "Using default freebayes parameters"
     fi
     
-    # Build BAM arguments
-    BAM_ARGS=""
-    for bam in *.bam; do
-        if [[ -f "\$bam" ]]; then
-            BAM_ARGS="\$BAM_ARGS --bam \$bam"
-        fi
-    done
-    
-    echo "BAM arguments: \$BAM_ARGS"
+    # Add output
+    FREEBAYES_CMD="\$FREEBAYES_CMD --vcf chunk_${chunk_id}.vcf"
     
     # Run freebayes
-    echo "Running freebayes on chunk ${chunk_id}..."
+    echo "Running: \$FREEBAYES_CMD"
+    \$FREEBAYES_CMD
     
-    freebayes \\
-        --fasta-reference ${reference_fa} \\
-        --targets chunk_targets.bed \\
-        \$BAM_ARGS \\
-        \$FREEBAYES_OPTS \\
-        --vcf chunk_${chunk_id}.vcf
-    
-    # Process output
-    if [[ -s chunk_${chunk_id}.vcf ]]; then
-        echo "Freebayes completed successfully for chunk ${chunk_id}"
+    # Check output and compress
+    if [ -s "chunk_${chunk_id}.vcf" ]; then
+        echo "Freebayes completed successfully"
         
-        variant_count=\$(grep -v '^#' chunk_${chunk_id}.vcf | wc -l)
-        echo "Found \$variant_count variants in chunk ${chunk_id}"
+        # Count variants
+        VARIANT_COUNT=\$(grep -v '^#' chunk_${chunk_id}.vcf | wc -l)
+        echo "Found \$VARIANT_COUNT variants"
         
-        echo "Samples in VCF:"
-        if grep -q "^#CHROM" chunk_${chunk_id}.vcf; then
-            sample_count=\$(grep "^#CHROM" chunk_${chunk_id}.vcf | cut -f10- | tr '\\t' '\\n' | wc -l)
-            grep "^#CHROM" chunk_${chunk_id}.vcf | cut -f10- | tr '\\t' '\\n' | head -10
-            if [[ \$sample_count -gt 10 ]]; then
-                echo "... and \$((sample_count - 10)) more samples"
-            fi
-            echo "Total samples in VCF: \$sample_count"
+        # Show samples
+        if grep -q '^#CHROM' chunk_${chunk_id}.vcf; then
+            SAMPLE_COUNT=\$(grep '^#CHROM' chunk_${chunk_id}.vcf | cut -f10- | wc -w)
+            echo "Samples (\$SAMPLE_COUNT): \$(grep '^#CHROM' chunk_${chunk_id}.vcf | cut -f10- | tr '\\t' ' ')"
         fi
         
-        bgzip -c chunk_${chunk_id}.vcf > chunk_${chunk_id}.vcf.gz
+        # Compress and index
+        bgzip chunk_${chunk_id}.vcf
         tabix -p vcf chunk_${chunk_id}.vcf.gz
         
-        echo "Successfully compressed and indexed chunk ${chunk_id}"
     else
-        echo "No variants found in chunk ${chunk_id}, creating empty VCF"
+        echo "No variants found, creating empty VCF"
         
-        cat > chunk_${chunk_id}.vcf << 'VCF_HEADER'
-##fileformat=VCFv4.2
-##reference=${reference_fa}
-##source=freebayes
-##INFO=<ID=DP,Number=1,Type=Integer,Description="Total read depth">
-##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
-##FORMAT=<ID=DP,Number=1,Type=Integer,Description="Read depth">
-#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO
-VCF_HEADER
+        # Create minimal header
+        echo '##fileformat=VCFv4.2' > chunk_${chunk_id}.vcf
+        echo '##reference=${reference}' >> chunk_${chunk_id}.vcf
+        echo '#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO' >> chunk_${chunk_id}.vcf
         
-        bgzip -c chunk_${chunk_id}.vcf > chunk_${chunk_id}.vcf.gz
+        bgzip chunk_${chunk_id}.vcf
         tabix -p vcf chunk_${chunk_id}.vcf.gz
     fi
     
-    # Cleanup
-    rm -f chunk_${chunk_id}.vcf regions_list.txt chunk_targets.bed
-    
-    echo "Chunk ${chunk_id} processing complete"
+    echo "Chunk ${chunk_id} complete"
     """
 }

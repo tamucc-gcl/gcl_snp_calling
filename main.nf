@@ -43,10 +43,6 @@ def helpMessage() {
         --output_dir "variant_calls" \\
         --freebayes_config "freebayes_params.json"
     
-    Note: This version creates exactly the specified number of chunks,
-    with each chunk potentially spanning multiple contigs for complete
-    genome coverage.
-    
     """.stripIndent()
 }
 
@@ -84,98 +80,46 @@ workflow {
     log.info "Freebayes config:  ${params.freebayes_config ?: 'Using default parameters'}"
     log.info "================================================================"
     
-    // Create input channels separately and explicitly
-    reference_file = Channel.fromPath(params.reference, checkIfExists: true)
+    // Create input channels
+    reference_ch = Channel.fromPath(params.reference, checkIfExists: true)
+    bam_ch = Channel.fromPath(params.bams, checkIfExists: true)
     
-    // Get reference FAI file (should be alongside the reference)
-    reference_fai = Channel.fromPath("${params.reference}.fai", checkIfExists: true)
-    
-    // Collect BAM files
-    bam_files_list = Channel.fromPath(params.bams, checkIfExists: true)
-        .collect()
-        .map { bams ->
-            log.info "DEBUG: Collected ${bams.size()} BAM files: ${bams.collect{it.name}.join(', ')}"
-            return bams
-        }
-    
-    // Collect corresponding BAM index files
-    bam_index_files = Channel.fromPath(params.bams, checkIfExists: true)
-        .map { bam ->
-            def bai_file = file("${bam}.bai")
-            if (bai_file.exists()) {
-                return bai_file
-            } else {
-                def alt_bai = file("${bam.toString().replaceAll('\\.bam$', '.bai')}")
-                if (alt_bai.exists()) {
-                    return alt_bai
-                } else {
-                    // Return placeholder - will be created if needed
-                    return file("${bam}.bai")
-                }
-            }
-        }
-        .collect()
-    
-    // Handle config file
-    if (params.freebayes_config && params.freebayes_config != "null" && params.freebayes_config != null) {
-        config_file_ch = Channel.fromPath(params.freebayes_config, checkIfExists: true)
-        log.info "DEBUG: Using config file: ${params.freebayes_config}"
+    // Config file channel
+    if (params.freebayes_config) {
+        config_ch = Channel.fromPath(params.freebayes_config, checkIfExists: true)
     } else {
-        // Create a dummy file for "no config"
-        config_file_ch = Channel.value(file("NO_CONFIG_FILE"))
-        log.info "DEBUG: No config file provided"
+        config_ch = Channel.empty()
     }
     
     // Step 1: Create genome chunks
-    chunk_results = CREATE_CHUNKS(reference_file, params.num_chunks)
-    chunks_bed_file = chunk_results[0]
-    chunk_regions_file = chunk_results[1]
+    chunks = CREATE_CHUNKS(reference_ch, params.num_chunks)
+    chunk_regions = chunks[1]  // The regions file
     
-    // Step 2: Parse chunk regions
-    chunks_channel = chunk_regions_file
+    // Step 2: Parse chunk regions into individual chunks
+    chunk_ch = chunk_regions
         .splitText()
         .map { line ->
-            def trimmed = line.trim()
-            if (trimmed && !trimmed.startsWith('#')) {
-                def parts = trimmed.split('\t')
-                if (parts.size() >= 2) {
-                    return [parts[0], parts[1]]  // [chunk_id, regions_string]
-                }
+            def parts = line.trim().split('\t')
+            if (parts.size() >= 2) {
+                return [parts[0], parts[1]]  // [chunk_id, regions_string]
             }
             return null
         }
         .filter { it != null }
     
-    // Step 3: Create inputs for FREEBAYES_CHUNK
-    // Process signature: tuple val(chunk_id), val(regions_string), path(reference_fa), path(reference_fai), path(bam_files), path(bai_files), path(config_file)
+    // Step 3: Run freebayes on each chunk
+    // Each chunk gets: reference, all BAM files, config (optional), and region info
+    vcf_chunks = FREEBAYES_CHUNK(
+        chunk_ch,
+        reference_ch,
+        bam_ch.collect(),
+        config_ch.collect().ifEmpty([])
+    )
     
-    freebayes_inputs = chunks_channel
-        .combine(reference_file)
-        .combine(reference_fai)
-        .combine(bam_files_list)
-        .combine(bam_index_files)
-        .combine(config_file_ch)
-        .map { it ->
-            // it is [chunk_info, ref_fa, ref_fai, bams, bais, config]
-            // where chunk_info is [chunk_id, regions_string]
-            def chunk_info = it[0]
-            def ref_fa = it[1]
-            def ref_fai = it[2]
-            def bams = it[3]
-            def bais = it[4]
-            def config = it[5]
-            return [chunk_info[0], chunk_info[1], ref_fa, ref_fai, bams, bais, config]
-        }
+    // Step 4: Combine all VCF files
+    all_vcfs = vcf_chunks.map { chunk_id, vcf -> vcf }.collect()
     
-    // Run freebayes
-    vcf_results = FREEBAYES_CHUNK(freebayes_inputs)
-    
-    // Step 4: Combine VCFs
-    all_vcf_files = vcf_results
-        .map { chunk_id, vcf_file -> vcf_file }
-        .collect()
-    
-    COMBINE_VCFS(all_vcf_files, params.output_vcf)
+    COMBINE_VCFS(all_vcfs, params.output_vcf)
 }
 
 workflow.onComplete {
