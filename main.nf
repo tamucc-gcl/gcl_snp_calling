@@ -155,7 +155,15 @@ workflow {
         .combine(bam_files_list)
         .combine(bam_index_files)
         .combine(config_file_ch)
-        .map { chunk_info, ref_fa, ref_fai, bams, bais, config ->
+        .map { it ->
+            // it is [chunk_info, ref_fa, ref_fai, bams, bais, config]
+            // where chunk_info is [chunk_id, regions_string]
+            def chunk_info = it[0]
+            def ref_fa = it[1]
+            def ref_fai = it[2]
+            def bams = it[3]
+            def bais = it[4]
+            def config = it[5]
             return [chunk_info[0], chunk_info[1], ref_fa, ref_fai, bams, bais, config]
         }
     
