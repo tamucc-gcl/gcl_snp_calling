@@ -10,10 +10,10 @@ include { COMBINE_VCFS } from './modules/combine_vcfs'
 // Parameters
 params.bams = "*.bam"
 params.reference = "reference.fasta"
-params.num_chunks = 10  // Number of chunks to split genome into
+params.num_chunks = 10
 params.output_dir = "results"
 params.output_vcf = "combined_variants.vcf.gz"
-params.freebayes_config = null  // Optional: path to freebayes config JSON file
+params.freebayes_config = null
 
 // Help message
 def helpMessage() {
@@ -72,24 +72,24 @@ workflow {
     log.info "Freebayes config:  ${params.freebayes_config ?: 'Using default parameters'}"
     log.info "================================================================"
     
-    // Create input channels - SIMPLE approach
+    // Create channels
     reference_ch = Channel.fromPath(params.reference, checkIfExists: true)
     reference_fai_ch = Channel.fromPath("${params.reference}.fai", checkIfExists: true)
-    bam_ch = Channel.fromPath(params.bams, checkIfExists: true)
     
-    // Config file channel
-    if (params.freebayes_config) {
-        config_ch = Channel.fromPath(params.freebayes_config, checkIfExists: true)
-    } else {
-        config_ch = Channel.empty()
-    }
+    // Collect BAM files into a single list
+    bam_files = Channel.fromPath(params.bams, checkIfExists: true).collect()
+    
+    // Config file
+    config_file = params.freebayes_config ? 
+        Channel.fromPath(params.freebayes_config, checkIfExists: true) : 
+        Channel.value(file("NO_CONFIG"))
     
     // Step 1: Create genome chunks
     chunks = CREATE_CHUNKS(reference_ch, params.num_chunks)
-    chunk_regions = chunks[1]  // The regions file
+    chunk_regions = chunks[1]
     
-    // Step 2: Parse chunk regions into individual chunks
-    chunks_ch = chunk_regions
+    // Step 2: Parse chunks and combine with all inputs
+    chunk_inputs = chunk_regions
         .splitText()
         .map { line ->
             def parts = line.trim().split('\t')
@@ -99,21 +99,16 @@ workflow {
             return null
         }
         .filter { it != null }
+        .map { chunk_tuple ->
+            // For each chunk, create a tuple with all inputs
+            return [chunk_tuple[0], chunk_tuple[1], reference_ch, reference_fai_ch, bam_files, config_file]
+        }
     
-    // Step 3: For each chunk, combine with all needed inputs
-    // This creates the Cartesian product: each chunk × reference × reference_fai × all_bams × config
-    freebayes_input = chunks_ch
-        .combine(reference_ch)
-        .combine(reference_fai_ch)
-        .combine(bam_ch.collect())
-        .combine(config_ch.collect().ifEmpty([file("NO_CONFIG")]))
+    // Step 3: Run freebayes
+    vcf_chunks = FREEBAYES_CHUNK(chunk_inputs)
     
-    // Run freebayes
-    vcf_chunks = FREEBAYES_CHUNK(freebayes_input)
-    
-    // Step 4: Combine all VCF files
+    // Step 4: Combine VCFs
     all_vcfs = vcf_chunks.map { chunk_id, vcf -> vcf }.collect()
-    
     COMBINE_VCFS(all_vcfs, params.output_vcf)
 }
 
