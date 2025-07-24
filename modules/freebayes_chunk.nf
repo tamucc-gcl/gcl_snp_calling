@@ -9,7 +9,7 @@ process FREEBAYES_CHUNK {
     tuple val(chunk_id), path("chunk_${chunk_id}.vcf.gz")
     
     script:
-    def has_config = config_file.name != "NO_CONFIG"
+    def has_config = config_file.toString() != "NO_CONFIG"
     """
     echo "Processing chunk ${chunk_id}"
     echo "Regions: ${regions_string}"
