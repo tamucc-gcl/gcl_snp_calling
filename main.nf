@@ -108,13 +108,18 @@ workflow {
         .filter { it != null }
     
     // Step 3: Run freebayes on each chunk
-    // Each chunk gets: tuple(chunk_id, regions), reference, all BAM files, config (optional)
-    vcf_chunks = FREEBAYES_CHUNK(
-        chunk_ch,
-        reference_ch,
-        bam_ch.collect(),
-        config_ch.collect().ifEmpty([])
-    )
+    // Use combine to ensure each chunk gets all inputs
+    bam_list = bam_ch.collect()
+    config_list = config_ch.collect().ifEmpty([])
+    
+    vcf_chunks = chunk_ch
+        .combine(reference_ch)
+        .combine(bam_list)
+        .combine(config_list)
+        .map { chunk_info, ref, bams, config ->
+            return [chunk_info, ref, bams, config]
+        }
+        | FREEBAYES_CHUNK
     
     // Step 4: Combine all VCF files
     all_vcfs = vcf_chunks.map { chunk_id, vcf -> vcf }.collect()

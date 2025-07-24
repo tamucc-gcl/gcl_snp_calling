@@ -3,15 +3,14 @@
 process FREEBAYES_CHUNK {
     
     input:
-    tuple val(chunk_id), val(regions_string)  // separate the tuple components
-    path reference          // reference genome FASTA
-    path bams               // list of BAM files
-    path config             // config file (optional, could be empty)
+    tuple val(chunk_info), path(reference), path(bams), path(config)
     
     output:
-    tuple val(chunk_id), path("chunk_${chunk_id}.vcf.gz")
+    tuple val("${chunk_info[0]}"), path("chunk_${chunk_info[0]}.vcf.gz")
     
     script:
+    def chunk_id = chunk_info[0]
+    def regions_string = chunk_info[1]
     def config_file = config.size() > 0 ? config[0] : null
     def has_config = config_file != null
     """
