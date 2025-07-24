@@ -116,9 +116,6 @@ workflow {
         .combine(reference_ch)
         .combine(bam_list)
         .combine(config_list)
-        .map { chunk_info, ref, bams, config ->
-            return [chunk_info, ref, bams, config]
-        }
         | FREEBAYES_CHUNK
     
     // Step 4: Combine all VCF files
