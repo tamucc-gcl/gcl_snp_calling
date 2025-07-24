@@ -1,49 +1,41 @@
-// modules/freebayes_chunk.nf - Final working version
+// modules/freebayes_chunk.nf - Simple approach using proper Nextflow staging
 
 process FREEBAYES_CHUNK {
     
     input:
-    tuple val(chunk_id), val(regions_string), val(reference), val(reference_fai), val(bam_files), val(config_file)
+    tuple val(chunk_id), val(regions_string)
+    path reference
+    path reference_fai
+    path bams
+    path config
     
     output:
     tuple val(chunk_id), path("chunk_${chunk_id}.vcf.gz")
     
     script:
-    def has_config = config_file.toString() != "NO_CONFIG"
-    def bam_symlinks = bam_files.collect { "ln -sf ${it} ${it.name}" }.join('\n    ')
-    def bai_symlinks = bam_files.collect { "ln -sf ${it}.bai ${it.name}.bai 2>/dev/null || echo 'No BAI for ${it.name}'" }.join('\n    ')
-    def bam_count = bam_files.size()
+    def config_file = config.size() > 0 ? config[0] : null
+    def has_config = config_file != null
     """
     echo "Processing chunk ${chunk_id}"
     echo "Regions: ${regions_string}"
+    echo "Reference: ${reference}"
+    echo "Reference FAI: ${reference_fai}"
     echo "Config provided: ${has_config}"
     
-    # Create symlinks to reference files
-    ln -sf ${reference} genome.fa
-    ln -sf ${reference_fai} genome.fa.fai
-    
-    # Create symlinks to all BAM files
-    ${bam_symlinks}
-    
-    # Create symlinks to BAI files (they should exist alongside BAM files)
-    ${bai_symlinks}
-    
-    echo "BAM files in work directory:"
-    ls -la *.bam 2>/dev/null || echo "No BAM files found"
-    
-    echo "BAI files in work directory:"
-    ls -la *.bai 2>/dev/null || echo "No BAI files found"
+    # List all staged files
+    echo "All files in work directory:"
+    ls -la
     
     # Count BAM files
     BAM_COUNT=\$(ls -1 *.bam 2>/dev/null | wc -l)
-    echo "Total BAM files: \$BAM_COUNT (expected: ${bam_count})"
+    echo "Total BAM files: \$BAM_COUNT"
     
     if [ \$BAM_COUNT -eq 0 ]; then
         echo "ERROR: No BAM files found!"
         exit 1
     fi
     
-    # Create indices if missing
+    # Ensure BAM indices exist
     for bam in *.bam; do
         if [ -f "\$bam" ] && [ ! -f "\${bam}.bai" ]; then
             echo "Creating index for \$bam"
@@ -70,7 +62,7 @@ process FREEBAYES_CHUNK {
     cat chunk.bed
     
     # Build freebayes command
-    FREEBAYES_CMD="freebayes --fasta-reference genome.fa --targets chunk.bed"
+    FREEBAYES_CMD="freebayes --fasta-reference ${reference} --targets chunk.bed"
     
     # Add BAM files
     for bam in *.bam; do
@@ -81,55 +73,55 @@ process FREEBAYES_CHUNK {
     
     # Add config options if provided
     if [ "${has_config}" = "true" ]; then
-        # Create symlink to config file
-        ln -sf ${config_file} config.json
-        
-        echo "Loading config from config.json"
-        
-        # Parse key config options
-        MIN_MAPQ=\$(python3 -c "
+        CONFIG_FILE=\$(ls *.json 2>/dev/null | head -n1)
+        if [ -n "\$CONFIG_FILE" ]; then
+            echo "Loading config from \$CONFIG_FILE"
+            
+            # Parse key config options
+            MIN_MAPQ=\$(python3 -c "
 import json
 try:
-    with open('config.json') as f:
+    with open('\$CONFIG_FILE') as f:
         config = json.load(f)
     print(config.get('algorithm_parameters', {}).get('min_mapping_quality', 20))
 except:
     print(20)
 " 2>/dev/null)
-        
-        MIN_BASEQ=\$(python3 -c "
+            
+            MIN_BASEQ=\$(python3 -c "
 import json
 try:
-    with open('config.json') as f:
+    with open('\$CONFIG_FILE') as f:
         config = json.load(f)
     print(config.get('algorithm_parameters', {}).get('min_base_quality', 20))
 except:
     print(20)
 " 2>/dev/null)
-        
-        MIN_ALT_FRAC=\$(python3 -c "
+            
+            MIN_ALT_FRAC=\$(python3 -c "
 import json
 try:
-    with open('config.json') as f:
+    with open('\$CONFIG_FILE') as f:
         config = json.load(f)
     print(config.get('algorithm_parameters', {}).get('min_alternate_fraction', 0.05))
 except:
     print(0.05)
 " 2>/dev/null)
-        
-        MIN_ALT_COUNT=\$(python3 -c "
+            
+            MIN_ALT_COUNT=\$(python3 -c "
 import json
 try:
-    with open('config.json') as f:
+    with open('\$CONFIG_FILE') as f:
         config = json.load(f)
     print(config.get('algorithm_parameters', {}).get('min_alternate_count', 2))
 except:
     print(2)
 " 2>/dev/null)
-        
-        FREEBAYES_CMD="\$FREEBAYES_CMD --min-mapping-quality \$MIN_MAPQ --min-base-quality \$MIN_BASEQ --min-alternate-fraction \$MIN_ALT_FRAC --min-alternate-count \$MIN_ALT_COUNT"
-        
-        echo "Using config parameters: mapq=\$MIN_MAPQ, baseq=\$MIN_BASEQ, alt_frac=\$MIN_ALT_FRAC, alt_count=\$MIN_ALT_COUNT"
+            
+            FREEBAYES_CMD="\$FREEBAYES_CMD --min-mapping-quality \$MIN_MAPQ --min-base-quality \$MIN_BASEQ --min-alternate-fraction \$MIN_ALT_FRAC --min-alternate-count \$MIN_ALT_COUNT"
+            
+            echo "Using config parameters: mapq=\$MIN_MAPQ, baseq=\$MIN_BASEQ, alt_frac=\$MIN_ALT_FRAC, alt_count=\$MIN_ALT_COUNT"
+        fi
     else
         echo "Using default freebayes parameters"
     fi
@@ -164,7 +156,7 @@ except:
         
         # Create minimal header
         echo '##fileformat=VCFv4.2' > chunk_${chunk_id}.vcf
-        echo '##reference=genome.fa' >> chunk_${chunk_id}.vcf
+        echo '##reference=${reference}' >> chunk_${chunk_id}.vcf
         echo '#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO' >> chunk_${chunk_id}.vcf
         
         bgzip chunk_${chunk_id}.vcf

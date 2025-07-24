@@ -51,16 +51,10 @@ if (!params.bams || !params.reference) {
     exit 1
 }
 
-if (params.num_chunks <= 0) {
-    log.error "ERROR: --num_chunks must be a positive integer"
-    exit 1
-}
-
 /*
  * Main Workflow
  */
 workflow {
-    // Print pipeline info
     log.info "================================================================"
     log.info "Parallel Freebayes Variant Calling Pipeline"
     log.info "================================================================"
@@ -72,24 +66,24 @@ workflow {
     log.info "Freebayes config:  ${params.freebayes_config ?: 'Using default parameters'}"
     log.info "================================================================"
     
-    // Create channels
+    // Simple channel creation
     reference_ch = Channel.fromPath(params.reference, checkIfExists: true)
     reference_fai_ch = Channel.fromPath("${params.reference}.fai", checkIfExists: true)
-    
-    // Collect BAM files into a single list
-    bam_files = Channel.fromPath(params.bams, checkIfExists: true).collect()
+    bam_ch = Channel.fromPath(params.bams, checkIfExists: true)
     
     // Config file
-    config_file = params.freebayes_config ? 
-        Channel.fromPath(params.freebayes_config, checkIfExists: true) : 
-        Channel.value(file("NO_CONFIG"))
+    if (params.freebayes_config) {
+        config_ch = Channel.fromPath(params.freebayes_config, checkIfExists: true)
+    } else {
+        config_ch = Channel.empty()
+    }
     
     // Step 1: Create genome chunks
     chunks = CREATE_CHUNKS(reference_ch, params.num_chunks)
     chunk_regions = chunks[1]
     
-    // Step 2: Parse chunks and combine with all inputs
-    chunk_inputs = chunk_regions
+    // Step 2: Parse chunks
+    chunk_ch = chunk_regions
         .splitText()
         .map { line ->
             def parts = line.trim().split('\t')
@@ -99,13 +93,15 @@ workflow {
             return null
         }
         .filter { it != null }
-        .map { chunk_tuple ->
-            // For each chunk, create a tuple with all inputs
-            return [chunk_tuple[0], chunk_tuple[1], reference_ch, reference_fai_ch, bam_files, config_file]
-        }
     
-    // Step 3: Run freebayes
-    vcf_chunks = FREEBAYES_CHUNK(chunk_inputs)
+    // Step 3: For each chunk, run freebayes with ALL inputs
+    vcf_chunks = FREEBAYES_CHUNK(
+        chunk_ch,
+        reference_ch,
+        reference_fai_ch,
+        bam_ch.collect(),
+        config_ch.collect().ifEmpty([])
+    )
     
     // Step 4: Combine VCFs
     all_vcfs = vcf_chunks.map { chunk_id, vcf -> vcf }.collect()
