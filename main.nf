@@ -107,6 +107,9 @@ workflow {
                 bams: pairs.collect { it[0] }
                 bais: pairs.collect { it[1] }
             }
+        
+        bam_files = bam_bai_split.bams
+        bai_files = bam_bai_split.bais
     } else {
         // Use original BAMs without filtering
         bam_bai_split = Channel.fromPath(params.bams, checkIfExists: true)
@@ -122,10 +125,10 @@ workflow {
                 bams: pairs.collect { it[0] }
                 bais: pairs.collect { it[1] }
             }
+        
+        bam_files = bam_bai_split.bams
+        bai_files = bam_bai_split.bais
     }
-    
-    bam_files = bam_bai_split.bams.first()
-    bai_files = bam_bai_split.bais.first()
     
     // Config file
     if (params.freebayes_config) {
