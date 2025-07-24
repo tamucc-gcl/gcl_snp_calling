@@ -70,16 +70,23 @@ workflow {
     reference_ch = Channel.fromPath(params.reference, checkIfExists: true).first()
     reference_fai_ch = Channel.fromPath("${params.reference}.fai", checkIfExists: true).first()
     
-    // Create paired BAM and BAI files
-    bam_files = Channel.fromPath(params.bams, checkIfExists: true)
-        .map { bam -> 
+    // Create lists of BAM and BAI files
+    bam_bai_split = Channel.fromPath(params.bams, checkIfExists: true)
+        .map { bam ->
             def bai = file("${bam}.bai")
             if (!bai.exists()) {
                 error "BAM index file not found: ${bai}. Please run 'samtools index ${bam}'"
             }
-            return [bam, bai]
+            return tuple(bam, bai)
         }
-        .collect()
+        .toList()
+        .multiMap { pairs ->
+            bams: pairs.collect { it[0] }
+            bais: pairs.collect { it[1] }
+        }
+    
+    bam_files = bam_bai_split.bams.first()
+    bai_files = bam_bai_split.bais.first()
     
     // Config file
     if (params.freebayes_config) {
@@ -105,12 +112,13 @@ workflow {
         .filter { it != null }
     
     // Step 3: For each chunk, run freebayes with ALL inputs
-    // Combine the chunk channel with the other inputs properly
+    // Pass BAM and BAI files separately
     vcf_chunks = FREEBAYES_CHUNK(
         chunk_ch,
         reference_ch,
         reference_fai_ch,
         bam_files,
+        bai_files,
         config_ch
     )
     
