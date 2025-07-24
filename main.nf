@@ -108,7 +108,7 @@ workflow {
         .filter { it != null }
     
     // Step 3: Run freebayes on each chunk
-    // Each chunk gets: reference, all BAM files, config (optional), and region info
+    // Each chunk gets: tuple(chunk_id, regions), reference, all BAM files, config (optional)
     vcf_chunks = FREEBAYES_CHUNK(
         chunk_ch,
         reference_ch,
