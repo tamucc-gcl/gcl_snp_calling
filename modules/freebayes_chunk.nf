@@ -3,14 +3,12 @@
 process FREEBAYES_CHUNK {
     
     input:
-    tuple val(chunk_info), path(reference), path(reference_fai), path(bams), path(config)
+    tuple val(chunk_id), val(regions_string), path(reference), path(reference_fai), path(bams), path(config)
     
     output:
-    tuple val("${chunk_info[0]}"), path("chunk_${chunk_info[0]}.vcf.gz")
+    tuple val(chunk_id), path("chunk_${chunk_id}.vcf.gz")
     
     script:
-    def chunk_id = chunk_info[0]
-    def regions_string = chunk_info[1]
     def config_file = config.size() > 0 ? config[0] : null
     def has_config = config_file != null && config_file.name != "NO_CONFIG"
     """
