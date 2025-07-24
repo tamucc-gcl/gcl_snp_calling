@@ -4,6 +4,7 @@ nextflow.enable.dsl = 2
 
 // Import modules
 include { CREATE_CHUNKS } from './modules/create_chunks'
+include { FILTER_BAMS } from './modules/filter_bams'
 include { FREEBAYES_CHUNK } from './modules/freebayes_chunk'
 include { COMBINE_VCFS } from './modules/combine_vcfs'
 
@@ -14,6 +15,7 @@ params.num_chunks = 10
 params.output_dir = "results"
 params.output_vcf = "combined_variants.vcf.gz"
 params.freebayes_config = null
+params.bam_filter_config = null
 
 // Help message
 def helpMessage() {
@@ -34,6 +36,7 @@ def helpMessage() {
     --output_dir        Output directory (default: "results")
     --output_vcf        Name of final combined VCF file (default: "combined_variants.vcf.gz")
     --freebayes_config  Path to JSON file containing freebayes parameters (optional)
+    --bam_filter_config Path to JSON file containing BAM filter parameters (optional)
     
     """.stripIndent()
 }
@@ -64,26 +67,62 @@ workflow {
     log.info "Output directory:  ${params.output_dir}"
     log.info "Output VCF:        ${params.output_vcf}"
     log.info "Freebayes config:  ${params.freebayes_config ?: 'Using default parameters'}"
+    log.info "BAM filter config: ${params.bam_filter_config ?: 'Using default parameters'}"
     log.info "================================================================"
     
     // Create channels - use .first() to make them value channels that can be reused
     reference_ch = Channel.fromPath(params.reference, checkIfExists: true).first()
     reference_fai_ch = Channel.fromPath("${params.reference}.fai", checkIfExists: true).first()
     
-    // Create lists of BAM and BAI files
-    bam_bai_split = Channel.fromPath(params.bams, checkIfExists: true)
-        .map { bam ->
-            def bai = file("${bam}.bai")
-            if (!bai.exists()) {
-                error "BAM index file not found: ${bai}. Please run 'samtools index ${bam}'"
+    // BAM filter config
+    if (params.bam_filter_config) {
+        bam_filter_config_ch = Channel.fromPath(params.bam_filter_config, checkIfExists: true).first()
+    } else {
+        bam_filter_config_ch = Channel.value(file('NO_FILE'))
+    }
+    
+    // Process BAM files - either filter them or use them directly
+    if (params.bam_filter_config) {
+        // Filter BAMs in parallel
+        bam_pairs_ch = Channel.fromPath(params.bams, checkIfExists: true)
+            .map { bam ->
+                def bai = file("${bam}.bai")
+                if (!bai.exists()) {
+                    error "BAM index file not found: ${bai}. Please run 'samtools index ${bam}'"
+                }
+                return tuple(bam, bai)
             }
-            return tuple(bam, bai)
-        }
-        .toList()
-        .multiMap { pairs ->
-            bams: pairs.collect { it[0] }
-            bais: pairs.collect { it[1] }
-        }
+        
+        // Run filtering on each BAM file
+        filtered_bams = FILTER_BAMS(
+            bam_pairs_ch.map { it[0] },  // just the BAM
+            bam_pairs_ch.map { it[1] },  // just the BAI
+            bam_filter_config_ch
+        )
+        
+        // Collect filtered BAMs and BAIs
+        bam_bai_split = filtered_bams
+            .toList()
+            .multiMap { pairs ->
+                bams: pairs.collect { it[0] }
+                bais: pairs.collect { it[1] }
+            }
+    } else {
+        // Use original BAMs without filtering
+        bam_bai_split = Channel.fromPath(params.bams, checkIfExists: true)
+            .map { bam ->
+                def bai = file("${bam}.bai")
+                if (!bai.exists()) {
+                    error "BAM index file not found: ${bai}. Please run 'samtools index ${bam}'"
+                }
+                return tuple(bam, bai)
+            }
+            .toList()
+            .multiMap { pairs ->
+                bams: pairs.collect { it[0] }
+                bais: pairs.collect { it[1] }
+            }
+    }
     
     bam_files = bam_bai_split.bams.first()
     bai_files = bam_bai_split.bais.first()
@@ -95,7 +134,7 @@ workflow {
         config_ch = Channel.value([])
     }
     
-    // Step 1: Create genome chunks
+    // Step 1: Create genome chunks (runs in parallel with BAM filtering)
     chunks = CREATE_CHUNKS(reference_ch, params.num_chunks)
     chunk_regions = chunks[1]
     
@@ -112,7 +151,7 @@ workflow {
         .filter { it != null }
     
     // Step 3: For each chunk, run freebayes with ALL inputs
-    // Pass BAM and BAI files separately
+    // This will wait for both BAM filtering and chunking to complete
     vcf_chunks = FREEBAYES_CHUNK(
         chunk_ch,
         reference_ch,

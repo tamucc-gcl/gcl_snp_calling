@@ -1,0 +1,17 @@
+{
+  "filter_parameters": {
+    "mapping_min_quality": 20,
+    "remove_unmapped_reads": "no",
+    "remove_read_pair_if_one_is_unmapped": "yes",
+    "remove_secondary_alignments": "yes",
+    "remove_reads_not_passing_platform_vendor_filters": "no",
+    "remove_pcr_or_optical_duplicates": "no",
+    "remove_supplementary_alignments": "no",
+    "keep_only_properly_aligned_read_pairs": "yes",
+    "custom_samtools_view_F_bit_value": 0,
+    "custom_samtools_view_f_bit_value": 0,
+    "remove_reads_with_excessive_soft_clipping": 20,
+    "remove_reads_with_alignment_score_below": 50,
+    "remove_reads_orphaned_by_filters": "yes"
+  }
+}
