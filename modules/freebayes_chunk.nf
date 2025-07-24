@@ -1,9 +1,9 @@
-// modules/freebayes_chunk.nf - Clean, simple approach
+// modules/freebayes_chunk.nf - Simple, clean approach
 
 process FREEBAYES_CHUNK {
     
     input:
-    tuple val(chunk_info), path(reference), path(reference_fai), path(bams), path(config)
+    tuple val(chunk_info), path(reference), path(reference_fai), val(bam_files), val(bai_files), path(config_file)
     
     output:
     tuple val("${chunk_info[0]}"), path("chunk_${chunk_info[0]}.vcf.gz")
@@ -11,38 +11,27 @@ process FREEBAYES_CHUNK {
     script:
     def chunk_id = chunk_info[0]
     def regions_string = chunk_info[1]
-    def config_file = config.size() > 0 ? config[0] : null
-    def has_config = config_file != null
+    def has_config = config_file.name != "NO_CONFIG"
     """
     echo "Processing chunk ${chunk_id}"
     echo "Regions: ${regions_string}"
     echo "Reference: ${reference}"
+    echo "Reference FAI: ${reference_fai}"
     echo "Config provided: ${has_config}"
     
-    # List BAM files
-    echo "BAM files:"
-    for bam in *.bam; do
-        if [ -f "\$bam" ]; then
-            echo "  \$bam"
-        fi
-    done
+    # Count BAM files - they come as a list in the variable
+    echo "Total BAM files: ${bam_files.size()}"
+    echo "BAM files: ${bam_files.collect{it.name}.join(', ')}"
     
-    # Count BAM files
-    BAM_COUNT=\$(ls -1 *.bam 2>/dev/null | wc -l)
-    echo "Total BAM files: \$BAM_COUNT"
+    # Create symlinks to BAM files in work directory
+    ${bam_files.collect { "ln -sf ${it} ." }.join('\n    ')}
     
-    if [ \$BAM_COUNT -eq 0 ]; then
-        echo "ERROR: No BAM files found!"
-        exit 1
-    fi
+    # Create symlinks to BAI files in work directory  
+    ${bai_files.collect { "ln -sf ${it} ." }.join('\n    ')}
     
-    # Ensure BAM indices exist
-    for bam in *.bam; do
-        if [ -f "\$bam" ] && [ ! -f "\${bam}.bai" ]; then
-            echo "Creating index for \$bam"
-            samtools index "\$bam"
-        fi
-    done
+    # List files to verify
+    echo "Files in work directory:"
+    ls -la *.bam *.bai 2>/dev/null || echo "Some files missing"
     
     # Create BED file for regions
     echo "${regions_string}" | tr ',' '\\n' > regions.txt
@@ -73,10 +62,10 @@ process FREEBAYES_CHUNK {
     done
     
     # Add config options if provided
-    if [ "${has_config}" = "true" ] && [ -f "${config_file}" ]; then
+    if [ "${has_config}" = "true" ]; then
         echo "Loading config from ${config_file}"
         
-        # Parse basic config options (simplified)
+        # Parse key config options
         MIN_MAPQ=\$(python3 -c "
 import json
 try:

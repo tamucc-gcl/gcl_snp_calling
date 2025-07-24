@@ -35,14 +35,6 @@ def helpMessage() {
     --output_vcf        Name of final combined VCF file (default: "combined_variants.vcf.gz")
     --freebayes_config  Path to JSON file containing freebayes parameters (optional)
     
-    Example:
-    nextflow run pipeline.nf \\
-        --bams "data/*.bam" \\
-        --reference "genome.fasta" \\
-        --num_chunks 50 \\
-        --output_dir "variant_calls" \\
-        --freebayes_config "freebayes_params.json"
-    
     """.stripIndent()
 }
 
@@ -64,6 +56,26 @@ if (params.num_chunks <= 0) {
     exit 1
 }
 
+// Subworkflow for processing chunks in parallel
+workflow PROCESS_CHUNKS {
+    take:
+    chunks_ch        // Channel of [chunk_id, regions_string]
+    reference        // Reference genome file
+    reference_fai    // Reference genome index
+    all_bams         // List of all BAM files
+    all_bais         // List of all BAI files  
+    config_file      // Config file (or empty)
+    
+    main:
+    // Each chunk gets all the files it needs
+    vcf_results = chunks_ch.map { chunk_info ->
+        return [chunk_info, reference, reference_fai, all_bams, all_bais, config_file]
+    } | FREEBAYES_CHUNK
+    
+    emit:
+    vcf_results
+}
+
 /*
  * Main Workflow
  */
@@ -81,23 +93,26 @@ workflow {
     log.info "================================================================"
     
     // Create input channels
-    reference_ch = Channel.fromPath(params.reference, checkIfExists: true)
-    reference_fai_ch = Channel.fromPath("${params.reference}.fai", checkIfExists: true)
-    bam_ch = Channel.fromPath(params.bams, checkIfExists: true)
+    reference_file = Channel.fromPath(params.reference, checkIfExists: true).first()
+    reference_fai = Channel.fromPath("${params.reference}.fai", checkIfExists: true).first()
     
-    // Config file channel
-    if (params.freebayes_config) {
-        config_ch = Channel.fromPath(params.freebayes_config, checkIfExists: true)
-    } else {
-        config_ch = Channel.empty()
-    }
+    // Collect all BAM files and their indices
+    all_bam_files = Channel.fromPath(params.bams, checkIfExists: true).collect()
+    all_bai_files = Channel.fromPath(params.bams, checkIfExists: true)
+        .map { bam -> file("${bam}.bai") }
+        .collect()
+    
+    // Handle config file
+    config_file = params.freebayes_config ? 
+        Channel.fromPath(params.freebayes_config, checkIfExists: true).first() : 
+        Channel.value(file("NO_CONFIG"))
     
     // Step 1: Create genome chunks
-    chunks = CREATE_CHUNKS(reference_ch, params.num_chunks)
+    chunks = CREATE_CHUNKS(reference_file, params.num_chunks)
     chunk_regions = chunks[1]  // The regions file
     
     // Step 2: Parse chunk regions into individual chunks
-    chunk_ch = chunk_regions
+    chunks_ch = chunk_regions
         .splitText()
         .map { line ->
             def parts = line.trim().split('\t')
@@ -108,18 +123,15 @@ workflow {
         }
         .filter { it != null }
     
-    // Step 3: Run freebayes on each chunk
-    // Each chunk process gets all the inputs it needs
-    vcf_chunks = chunk_ch
-        .combine(reference_ch)
-        .combine(reference_fai_ch)
-        .combine(bam_ch.collect())
-        .combine(config_ch.collect().ifEmpty([]))
-        .map { chunk_info, ref, ref_fai, bams, config ->
-            // Return tuple for process: [chunk_info, ref, ref_fai, bams, config]
-            return [chunk_info, ref, ref_fai, bams, config]
-        }
-        | FREEBAYES_CHUNK
+    // Step 3: Process all chunks in parallel using subworkflow
+    vcf_chunks = PROCESS_CHUNKS(
+        chunks_ch,
+        reference_file,
+        reference_fai,
+        all_bam_files,
+        all_bai_files,
+        config_file
+    )
     
     // Step 4: Combine all VCF files
     all_vcfs = vcf_chunks.map { chunk_id, vcf -> vcf }.collect()
