@@ -1,7 +1,6 @@
 // modules/freebayes_chunk.nf - Clean, simple approach
 
 process FREEBAYES_CHUNK {
-    tag "chunk_${chunk_info[0]}"
     
     input:
     val chunk_info          // [chunk_id, regions_string]
