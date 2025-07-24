@@ -1,4 +1,4 @@
-// modules/freebayes_chunk.nf - Simple approach using proper Nextflow staging
+// modules/freebayes_chunk.nf - Updated to handle BAM indices properly
 
 process FREEBAYES_CHUNK {
     
@@ -6,7 +6,8 @@ process FREEBAYES_CHUNK {
     tuple val(chunk_id), val(regions_string)
     path reference
     path reference_fai
-    path bams
+    path bams        // List of BAM files
+    path bais        // List of BAI files
     path config
     
     output:
@@ -35,11 +36,16 @@ process FREEBAYES_CHUNK {
         exit 1
     fi
     
-    # Ensure BAM indices exist
+    # Verify indices exist
+    echo "Verifying BAM indices:"
     for bam in *.bam; do
-        if [ -f "\$bam" ] && [ ! -f "\${bam}.bai" ]; then
-            echo "Creating index for \$bam"
-            samtools index "\$bam"
+        if [ -f "\$bam" ]; then
+            if [ -f "\${bam}.bai" ]; then
+                echo "  \$bam: index present"
+            else
+                echo "  \$bam: ERROR - index missing!"
+                exit 1
+            fi
         fi
     done
     

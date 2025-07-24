@@ -70,8 +70,16 @@ workflow {
     reference_ch = Channel.fromPath(params.reference, checkIfExists: true).first()
     reference_fai_ch = Channel.fromPath("${params.reference}.fai", checkIfExists: true).first()
     
-    // Collect all BAM files into a single list
-    bam_files = Channel.fromPath(params.bams, checkIfExists: true).collect()
+    // Create paired BAM and BAI files
+    bam_files = Channel.fromPath(params.bams, checkIfExists: true)
+        .map { bam -> 
+            def bai = file("${bam}.bai")
+            if (!bai.exists()) {
+                error "BAM index file not found: ${bai}. Please run 'samtools index ${bam}'"
+            }
+            return [bam, bai]
+        }
+        .collect()
     
     // Config file
     if (params.freebayes_config) {
