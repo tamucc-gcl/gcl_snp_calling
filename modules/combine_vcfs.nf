@@ -9,8 +9,8 @@ process COMBINE_VCFS {
     val output_name
     
     output:
-    path output_name
-    path "${output_name}.tbi"
+    path output_name, emit: vcf
+    path "${output_name}.tbi", emit: index
     
     script:
     """

@@ -169,7 +169,7 @@ workflow {
     all_vcfs = vcf_chunks.map { chunk_id, vcf -> vcf }.collect()
     COMBINE_VCFS(all_vcfs, params.output_vcf)
 
-    SUMMARIZE_VCFS(COMBINE_VCFS.out)
+    SUMMARIZE_VCFS(COMBINE_VCFS.out.vcf)
 }
 
 workflow.onComplete {
