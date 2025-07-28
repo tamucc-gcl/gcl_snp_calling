@@ -7,6 +7,7 @@ include { CREATE_CHUNKS } from './modules/create_chunks'
 include { FILTER_BAMS } from './modules/filter_bams'
 include { FREEBAYES_CHUNK } from './modules/freebayes_chunk'
 include { COMBINE_VCFS } from './modules/combine_vcfs'
+include { SUMMARIZE_VCFS } from './modules/summarize_vcf'
 
 // Parameters
 params.bams = "*.bam"
@@ -167,6 +168,8 @@ workflow {
     // Step 4: Combine VCFs
     all_vcfs = vcf_chunks.map { chunk_id, vcf -> vcf }.collect()
     COMBINE_VCFS(all_vcfs, params.output_vcf)
+
+    summarize_vcf(COMBINE_VCFS.out)
 }
 
 workflow.onComplete {
