@@ -7,7 +7,7 @@ include { CREATE_CHUNKS } from './modules/create_chunks'
 include { FILTER_BAMS } from './modules/filter_bams'
 include { FREEBAYES_CHUNK } from './modules/freebayes_chunk'
 include { COMBINE_VCFS } from './modules/combine_vcfs'
-include { SUMMARIZE_VCFS } from './modules/summarize_vcf'
+include { SUMMARIZE_VCFS } from './modules/summarize_vcfs'
 
 // Parameters
 params.bams = "*.bam"
