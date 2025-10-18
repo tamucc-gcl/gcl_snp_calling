@@ -1,4 +1,4 @@
-// modules/freebayes_chunk.nf - Updated to handle per-BAM ploidy via CNV map
+// modules/freebayes_chunk.nf - Complete version with ALL FreeBayes parameters
 
 process FREEBAYES_CHUNK {
     
@@ -9,7 +9,7 @@ process FREEBAYES_CHUNK {
     path bams        // List of BAM files
     path bais        // List of BAI files
     path config
-    path ploidy_map  // New input for ploidy map file
+    path ploidy_map  // Optional ploidy map file
     
     output:
     tuple val(chunk_id), path("chunk_${chunk_id}.vcf.gz")
@@ -26,10 +26,6 @@ process FREEBAYES_CHUNK {
     echo "Reference FAI: ${reference_fai}"
     echo "Config provided: ${has_config}"
     echo "Ploidy map provided: ${has_ploidy_map}"
-    
-    # List all staged files
-    echo "All files in work directory:"
-    ls -la
     
     # Count BAM files
     BAM_COUNT=\$(ls -1 *.bam 2>/dev/null | wc -l)
@@ -75,27 +71,18 @@ process FREEBAYES_CHUNK {
     if [ "${has_ploidy_map}" = "true" ]; then
         echo "Creating CNV map from ploidy map..."
         
-        # Create a CNV map file in FreeBayes format
-        # FreeBayes CNV format: sample_name<TAB>ploidy
         > cnv_map.txt
         
-        # Read the ploidy map and create CNV entries
         while read -r line; do
-            # Skip comments and empty lines
             [[ "\$line" =~ ^#.*$ ]] && continue
             [[ -z "\$line" ]] && continue
             
-            # Parse BAM name and ploidy
             bam_name=\$(echo "\$line" | awk '{print \$1}')
             ploidy=\$(echo "\$line" | awk '{print \$2}')
             
-            # Get the sample name from the BAM file
-            # FreeBayes uses the SM tag from the @RG header
             if [ -f "\$bam_name" ]; then
-                # Extract sample name from BAM header
                 sample_name=\$(samtools view -H "\$bam_name" | grep '^@RG' | sed -n 's/.*SM:\\([^\\t]*\\).*/\\1/p' | head -1)
                 
-                # If no sample name in header, use the BAM filename
                 if [ -z "\$sample_name" ]; then
                     sample_name="\${bam_name%.bam}"
                     sample_name="\${sample_name%.filtered}"
@@ -129,13 +116,13 @@ process FREEBAYES_CHUNK {
         fi
     done
     
-    # Add config options if provided
+    # Add config options if provided - COMPLETE PARAMETER EXTRACTION
     if [ "${has_config}" = "true" ]; then
         CONFIG_FILE=\$(ls *.json 2>/dev/null | head -n1)
         if [ -n "\$CONFIG_FILE" ]; then
             echo "Loading config from \$CONFIG_FILE"
             
-            # Parse ALL relevant config options using Python
+            # Parse ALL config options using Python
             python3 << 'PYTHON_PARSE' > freebayes_params.sh
 import json
 import sys
@@ -146,11 +133,14 @@ try:
     
     algo = config.get('algorithm_parameters', {})
     pop = config.get('population_model_parameters', {})
+    geno = config.get('genotype_likelihood_parameters', {})
+    report = config.get('reporting_parameters', {})
+    debug = config.get('additional_options', {})
     
-    # Algorithm parameters
     params = []
     
-    # Basic quality filters
+    # ========== ALGORITHM PARAMETERS ==========
+    # Quality filters
     if 'min_mapping_quality' in algo:
         params.append(f"--min-mapping-quality {algo['min_mapping_quality']}")
     if 'min_base_quality' in algo:
@@ -159,6 +149,22 @@ try:
         params.append(f"--min-supporting-allele-qsum {algo['min_supporting_allele_qsum']}")
     if 'min_supporting_mapping_qsum' in algo:
         params.append(f"--min-supporting-mapping-qsum {algo['min_supporting_mapping_qsum']}")
+    
+    # Mismatch filters
+    if 'mismatch_base_quality_threshold' in algo:
+        params.append(f"--mismatch-base-quality-threshold {algo['mismatch_base_quality_threshold']}")
+    if algo.get('read_mismatch_limit') is not None:
+        params.append(f"--read-mismatch-limit {algo['read_mismatch_limit']}")
+    if 'read_max_mismatch_fraction' in algo:
+        params.append(f"--read-max-mismatch-fraction {algo['read_max_mismatch_fraction']}")
+    
+    # Read filters  
+    if algo.get('read_snp_limit') is not None:
+        params.append(f"--read-snp-limit {algo['read_snp_limit']}")
+    if algo.get('read_indel_limit') is not None:
+        params.append(f"--read-indel-limit {algo['read_indel_limit']}")
+    if 'indel_exclusion_window' in algo:
+        params.append(f"--indel-exclusion-window {algo['indel_exclusion_window']}")
     
     # Allele filters
     if 'min_alternate_fraction' in algo:
@@ -176,21 +182,18 @@ try:
     if algo.get('max_coverage') is not None:
         params.append(f"--max-coverage {algo['max_coverage']}")
     
-    # ONLY add global ploidy if no CNV map is provided
-    # The CNV map overrides the global ploidy setting
+    # Ploidy and pooling
     if not ${has_ploidy_map} and 'ploidy' in algo:
         params.append(f"--ploidy {algo['ploidy']}")
         print(f"echo 'Global ploidy set to: {algo['ploidy']}'")
-    
-    # Pooling modes still apply globally
     if algo.get('pooled_discrete'):
         params.append("--pooled-discrete")
-        print("echo 'Using pooled-discrete mode for pooled sequencing'")
+        print("echo 'Using pooled-discrete mode'")
     elif algo.get('pooled_continuous'):
         params.append("--pooled-continuous")
-        print("echo 'Using pooled-continuous mode for pooled sequencing'")
+        print("echo 'Using pooled-continuous mode'")
     
-    # Other algorithm parameters
+    # Variant type controls
     if algo.get('use_duplicate_reads'):
         params.append("--use-duplicate-reads")
     if algo.get('no_partial_observations'):
@@ -204,16 +207,22 @@ try:
     if algo.get('no_indels'):
         params.append("--no-indels")
     
+    # Haplotype and repeat parameters
     if 'haplotype_length' in algo:
         params.append(f"--haplotype-length {algo['haplotype_length']}")
     if 'max_complex_gap' in algo:
         params.append(f"--max-complex-gap {algo['max_complex_gap']}")
     if 'min_repeat_entropy' in algo:
         params.append(f"--min-repeat-entropy {algo['min_repeat_entropy']}")
+    if 'min_repeat_length' in algo:
+        params.append(f"--min-repeat-length {algo['min_repeat_length']}")
+    # Note: min_repeat_entropy_for_detection doesn't have a direct FreeBayes flag
     
-    # Population model parameters
+    # ========== POPULATION MODEL PARAMETERS ==========
     if 'theta' in pop:
         params.append(f"--theta {pop['theta']}")
+    if 'posterior_integration_limits' in pop:
+        params.append(f"--posterior-integration-limits {pop['posterior_integration_limits']}")
     if pop.get('use_reference_allele'):
         params.append("--use-reference-allele")
     if pop.get('gvcf'):
@@ -221,11 +230,54 @@ try:
     if pop.get('gvcf_chunk') is not None:
         params.append(f"--gvcf-chunk {pop['gvcf_chunk']}")
     
+    # ========== GENOTYPE LIKELIHOOD PARAMETERS ==========
+    if geno.get('base_quality_cap') is not None:
+        params.append(f"--base-quality-cap {geno['base_quality_cap']}")
+    if 'prob_contamination' in geno:
+        params.append(f"--prob-contamination {geno['prob_contamination']}")
+    if geno.get('legacy_gls'):
+        params.append("--legacy-gls")
+    if geno.get('contamination_estimates'):
+        params.append(f"--contamination-estimates {geno['contamination_estimates']}")
+    
+    # ========== REPORTING PARAMETERS ==========
+    if report.get('genotype_qualities'):
+        params.append("--genotype-qualities")
+    if report.get('report_genotype_likelihood_max'):
+        params.append("--report-genotype-likelihood-max")
+    if 'genotyping_max_iterations' in report:
+        params.append(f"--genotyping-max-iterations {report['genotyping_max_iterations']}")
+    if 'genotyping_max_banddepth' in report:
+        params.append(f"--genotyping-max-banddepth {report['genotyping_max_banddepth']}")
+    # Note: posterior_integration_limits is duplicated in report section
+    if report.get('exclude_unobserved_genotypes'):
+        params.append("--exclude-unobserved-genotypes")
+    if report.get('genotype_variant_threshold') is not None:
+        params.append(f"--genotype-variant-threshold {report['genotype_variant_threshold']}")
+    if report.get('use_mapping_quality'):
+        params.append("--use-mapping-quality")
+    if report.get('harmonic_indel_quality'):
+        params.append("--harmonic-indel-quality")
+    if 'read_dependence_factor' in report:
+        params.append(f"--read-dependence-factor {report['read_dependence_factor']}")
+    
+    # ========== ADDITIONAL/DEBUG OPTIONS ==========
+    if debug.get('debug'):
+        params.append("--debug")
+    if debug.get('dd'):
+        params.append("--dd")
+    
+    # Output the parameters
     print(f"FREEBAYES_PARAMS='{' '.join(params)}'")
+    
+    # Print summary of what was configured
+    param_count = len(params)
+    print(f"echo 'Loaded {param_count} parameters from config file'")
     
 except Exception as e:
     print(f"# Error parsing config: {e}", file=sys.stderr)
     print("FREEBAYES_PARAMS=''")
+    print("echo 'WARNING: Failed to parse config file, using defaults'")
 PYTHON_PARSE
             
             # Source the parameters
@@ -234,11 +286,11 @@ PYTHON_PARSE
             # Add parsed parameters to command
             if [ -n "\$FREEBAYES_PARAMS" ]; then
                 FREEBAYES_CMD="\$FREEBAYES_CMD \$FREEBAYES_PARAMS"
-                echo "Using freebayes parameters: \$FREEBAYES_PARAMS"
+                echo "Using freebayes parameters from config"
             fi
         fi
     else
-        echo "Using default freebayes parameters"
+        echo "No config file provided - using FreeBayes defaults"
     fi
     
     # Add output
