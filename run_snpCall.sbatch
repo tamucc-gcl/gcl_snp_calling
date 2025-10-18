@@ -10,9 +10,11 @@
 module load nextflow/23.10.1
 module load miniconda3
 
+# Parse command line arguments
 freebayes_parameters="${1:-gcl_snp_calling/freebayes_parameters.json}"
 bam_filter_parameters="${2:-gcl_snp_calling/bam_filter_parameters.json}"
 nChunk="${3:-50}"
+ploidy_map="${4:-}"  # NEW: Optional 4th parameter for ploidy map
 
 echo "Freebayes parameters: ${freebayes_parameters}"
 cat ${freebayes_parameters}
@@ -24,6 +26,17 @@ echo ""
 
 echo "Number of chunks: ${nChunk}"
 
+# Check if ploidy map was provided
+if [ -n "${ploidy_map}" ] && [ -f "${ploidy_map}" ]; then
+    echo "Ploidy map: ${ploidy_map}"
+    echo "Ploidy map contents:"
+    cat ${ploidy_map}
+    echo ""
+    PLOIDY_MAP_PARAM="--ploidy_map ${ploidy_map}"
+else
+    echo "No ploidy map provided - using global ploidy from config or default"
+    PLOIDY_MAP_PARAM=""
+fi
 
 nextflow run gcl_snp_calling/main.nf \
     -profile slurm \
@@ -33,5 +46,6 @@ nextflow run gcl_snp_calling/main.nf \
     --freebayes_config ${freebayes_parameters} \
     --bam_filter_config ${bam_filter_parameters} \
     --num_chunks ${nChunk} \
+    ${PLOIDY_MAP_PARAM} \
     --output_dir "data/snps" \
     --output_vcf "all_samples.vcf.gz"

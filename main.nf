@@ -17,6 +17,7 @@ params.output_dir = "results"
 params.output_vcf = "combined_variants.vcf.gz"
 params.freebayes_config = null
 params.bam_filter_config = null
+params.ploidy_map = null  // NEW PARAMETER for per-BAM ploidy
 
 // Help message
 def helpMessage() {
@@ -38,6 +39,9 @@ def helpMessage() {
     --output_vcf        Name of final combined VCF file (default: "combined_variants.vcf.gz")
     --freebayes_config  Path to JSON file containing freebayes parameters (optional)
     --bam_filter_config Path to JSON file containing BAM filter parameters (optional)
+    --ploidy_map        Path to file mapping BAM files to ploidy values (optional)
+                        Format: bam_filename<TAB>ploidy (e.g., sample1.bam 40)
+                        For pooled samples: ploidy = num_individuals × 2 (diploid)
     
     """.stripIndent()
 }
@@ -69,6 +73,7 @@ workflow {
     log.info "Output VCF:        ${params.output_vcf}"
     log.info "Freebayes config:  ${params.freebayes_config ?: 'Using default parameters'}"
     log.info "BAM filter config: ${params.bam_filter_config ?: 'Using default parameters'}"
+    log.info "Ploidy map:        ${params.ploidy_map ?: 'Using global ploidy from config or default'}"
     log.info "================================================================"
     
     // Create channels - use .first() to make them value channels that can be reused
@@ -80,6 +85,13 @@ workflow {
         bam_filter_config_ch = Channel.fromPath(params.bam_filter_config, checkIfExists: true).first()
     } else {
         bam_filter_config_ch = Channel.value(file('NO_FILE'))
+    }
+    
+    // Ploidy map channel (NEW)
+    if (params.ploidy_map) {
+        ploidy_map_ch = Channel.fromPath(params.ploidy_map, checkIfExists: true).first()
+    } else {
+        ploidy_map_ch = Channel.value(file('NO_FILE'))
     }
     
     // Process BAM files - either filter them or use them directly
@@ -154,15 +166,15 @@ workflow {
         }
         .filter { it != null }
     
-    // Step 3: For each chunk, run freebayes with ALL inputs
-    // This will wait for both BAM filtering and chunking to complete
+    // Step 3: For each chunk, run freebayes with ALL inputs including ploidy map
     vcf_chunks = FREEBAYES_CHUNK(
         chunk_ch,
         reference_ch,
         reference_fai_ch,
         bam_files,
         bai_files,
-        config_ch
+        config_ch,
+        ploidy_map_ch  // NEW: Pass ploidy map to freebayes
     )
     
     // Step 4: Combine VCFs
@@ -188,6 +200,9 @@ workflow.onComplete {
         log.info "Final VCF file: ${params.output_dir}/${params.output_vcf}"
         log.info ""
         log.info "Pipeline used exactly ${params.num_chunks} chunks with complete genome coverage"
+        if (params.ploidy_map) {
+            log.info "Used per-BAM ploidy values from: ${params.ploidy_map}"
+        }
         log.info ""
         log.info "You can view the execution reports at:"
         log.info "- Timeline: ${params.output_dir}/pipeline/pipeline_timeline.html"

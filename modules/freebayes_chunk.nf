@@ -1,4 +1,4 @@
-// modules/freebayes_chunk.nf - Updated to handle BAM indices properly
+// modules/freebayes_chunk.nf - Updated to handle per-BAM ploidy via CNV map
 
 process FREEBAYES_CHUNK {
     
@@ -9,6 +9,7 @@ process FREEBAYES_CHUNK {
     path bams        // List of BAM files
     path bais        // List of BAI files
     path config
+    path ploidy_map  // New input for ploidy map file
     
     output:
     tuple val(chunk_id), path("chunk_${chunk_id}.vcf.gz")
@@ -16,12 +17,15 @@ process FREEBAYES_CHUNK {
     script:
     def config_file = config.size() > 0 ? config[0] : null
     def has_config = config_file != null
+    def ploidy_file = ploidy_map.name != 'NO_FILE' ? ploidy_map : null
+    def has_ploidy_map = ploidy_file != null
     """
     echo "Processing chunk ${chunk_id}"
     echo "Regions: ${regions_string}"
     echo "Reference: ${reference}"
     echo "Reference FAI: ${reference_fai}"
     echo "Config provided: ${has_config}"
+    echo "Ploidy map provided: ${has_ploidy_map}"
     
     # List all staged files
     echo "All files in work directory:"
@@ -67,8 +71,56 @@ process FREEBAYES_CHUNK {
     echo "BED file contents:"
     cat chunk.bed
     
+    # Process ploidy map if provided to create CNV map for FreeBayes
+    if [ "${has_ploidy_map}" = "true" ]; then
+        echo "Creating CNV map from ploidy map..."
+        
+        # Create a CNV map file in FreeBayes format
+        # FreeBayes CNV format: sample_name<TAB>ploidy
+        > cnv_map.txt
+        
+        # Read the ploidy map and create CNV entries
+        while read -r line; do
+            # Skip comments and empty lines
+            [[ "\$line" =~ ^#.*$ ]] && continue
+            [[ -z "\$line" ]] && continue
+            
+            # Parse BAM name and ploidy
+            bam_name=\$(echo "\$line" | awk '{print \$1}')
+            ploidy=\$(echo "\$line" | awk '{print \$2}')
+            
+            # Get the sample name from the BAM file
+            # FreeBayes uses the SM tag from the @RG header
+            if [ -f "\$bam_name" ]; then
+                # Extract sample name from BAM header
+                sample_name=\$(samtools view -H "\$bam_name" | grep '^@RG' | sed -n 's/.*SM:\\([^\\t]*\\).*/\\1/p' | head -1)
+                
+                # If no sample name in header, use the BAM filename
+                if [ -z "\$sample_name" ]; then
+                    sample_name="\${bam_name%.bam}"
+                    sample_name="\${sample_name%.filtered}"
+                fi
+                
+                echo -e "\$sample_name\\t\$ploidy" >> cnv_map.txt
+                echo "  Sample: \$sample_name, Ploidy: \$ploidy"
+            fi
+        done < ${ploidy_map}
+        
+        echo "CNV map created:"
+        cat cnv_map.txt
+        
+        CNV_MAP_OPTION="--cnv-map cnv_map.txt"
+    else
+        CNV_MAP_OPTION=""
+    fi
+    
     # Build freebayes command
     FREEBAYES_CMD="freebayes --fasta-reference ${reference} --targets chunk.bed"
+    
+    # Add CNV map if available
+    if [ -n "\$CNV_MAP_OPTION" ]; then
+        FREEBAYES_CMD="\$FREEBAYES_CMD \$CNV_MAP_OPTION"
+    fi
     
     # Add BAM files
     for bam in *.bam; do
@@ -83,50 +135,107 @@ process FREEBAYES_CHUNK {
         if [ -n "\$CONFIG_FILE" ]; then
             echo "Loading config from \$CONFIG_FILE"
             
-            # Parse key config options
-            MIN_MAPQ=\$(python3 -c "
+            # Parse ALL relevant config options using Python
+            python3 << 'PYTHON_PARSE' > freebayes_params.sh
 import json
+import sys
+
 try:
-    with open('\$CONFIG_FILE') as f:
+    with open('${config_file}' if '${config_file}' != '' else next((f for f in ['${config_file}'] + [f for f in __import__('glob').glob('*.json')] if f), None)) as f:
         config = json.load(f)
-    print(config.get('algorithm_parameters', {}).get('min_mapping_quality', 20))
-except:
-    print(20)
-" 2>/dev/null)
+    
+    algo = config.get('algorithm_parameters', {})
+    pop = config.get('population_model_parameters', {})
+    
+    # Algorithm parameters
+    params = []
+    
+    # Basic quality filters
+    if 'min_mapping_quality' in algo:
+        params.append(f"--min-mapping-quality {algo['min_mapping_quality']}")
+    if 'min_base_quality' in algo:
+        params.append(f"--min-base-quality {algo['min_base_quality']}")
+    if 'min_supporting_allele_qsum' in algo:
+        params.append(f"--min-supporting-allele-qsum {algo['min_supporting_allele_qsum']}")
+    if 'min_supporting_mapping_qsum' in algo:
+        params.append(f"--min-supporting-mapping-qsum {algo['min_supporting_mapping_qsum']}")
+    
+    # Allele filters
+    if 'min_alternate_fraction' in algo:
+        params.append(f"--min-alternate-fraction {algo['min_alternate_fraction']}")
+    if 'min_alternate_count' in algo:
+        params.append(f"--min-alternate-count {algo['min_alternate_count']}")
+    if 'min_alternate_qsum' in algo:
+        params.append(f"--min-alternate-qsum {algo['min_alternate_qsum']}")
+    if 'min_alternate_total' in algo:
+        params.append(f"--min-alternate-total {algo['min_alternate_total']}")
+    
+    # Coverage filters
+    if 'min_coverage' in algo:
+        params.append(f"--min-coverage {algo['min_coverage']}")
+    if algo.get('max_coverage') is not None:
+        params.append(f"--max-coverage {algo['max_coverage']}")
+    
+    # ONLY add global ploidy if no CNV map is provided
+    # The CNV map overrides the global ploidy setting
+    if not ${has_ploidy_map} and 'ploidy' in algo:
+        params.append(f"--ploidy {algo['ploidy']}")
+        print(f"echo 'Global ploidy set to: {algo['ploidy']}'")
+    
+    # Pooling modes still apply globally
+    if algo.get('pooled_discrete'):
+        params.append("--pooled-discrete")
+        print("echo 'Using pooled-discrete mode for pooled sequencing'")
+    elif algo.get('pooled_continuous'):
+        params.append("--pooled-continuous")
+        print("echo 'Using pooled-continuous mode for pooled sequencing'")
+    
+    # Other algorithm parameters
+    if algo.get('use_duplicate_reads'):
+        params.append("--use-duplicate-reads")
+    if algo.get('no_partial_observations'):
+        params.append("--no-partial-observations")
+    if algo.get('no_mnps'):
+        params.append("--no-mnps")
+    if algo.get('no_complex'):
+        params.append("--no-complex")
+    if algo.get('no_snps'):
+        params.append("--no-snps")
+    if algo.get('no_indels'):
+        params.append("--no-indels")
+    
+    if 'haplotype_length' in algo:
+        params.append(f"--haplotype-length {algo['haplotype_length']}")
+    if 'max_complex_gap' in algo:
+        params.append(f"--max-complex-gap {algo['max_complex_gap']}")
+    if 'min_repeat_entropy' in algo:
+        params.append(f"--min-repeat-entropy {algo['min_repeat_entropy']}")
+    
+    # Population model parameters
+    if 'theta' in pop:
+        params.append(f"--theta {pop['theta']}")
+    if pop.get('use_reference_allele'):
+        params.append("--use-reference-allele")
+    if pop.get('gvcf'):
+        params.append("--gvcf")
+    if pop.get('gvcf_chunk') is not None:
+        params.append(f"--gvcf-chunk {pop['gvcf_chunk']}")
+    
+    print(f"FREEBAYES_PARAMS='{' '.join(params)}'")
+    
+except Exception as e:
+    print(f"# Error parsing config: {e}", file=sys.stderr)
+    print("FREEBAYES_PARAMS=''")
+PYTHON_PARSE
             
-            MIN_BASEQ=\$(python3 -c "
-import json
-try:
-    with open('\$CONFIG_FILE') as f:
-        config = json.load(f)
-    print(config.get('algorithm_parameters', {}).get('min_base_quality', 20))
-except:
-    print(20)
-" 2>/dev/null)
+            # Source the parameters
+            source freebayes_params.sh
             
-            MIN_ALT_FRAC=\$(python3 -c "
-import json
-try:
-    with open('\$CONFIG_FILE') as f:
-        config = json.load(f)
-    print(config.get('algorithm_parameters', {}).get('min_alternate_fraction', 0.05))
-except:
-    print(0.05)
-" 2>/dev/null)
-            
-            MIN_ALT_COUNT=\$(python3 -c "
-import json
-try:
-    with open('\$CONFIG_FILE') as f:
-        config = json.load(f)
-    print(config.get('algorithm_parameters', {}).get('min_alternate_count', 2))
-except:
-    print(2)
-" 2>/dev/null)
-            
-            FREEBAYES_CMD="\$FREEBAYES_CMD --min-mapping-quality \$MIN_MAPQ --min-base-quality \$MIN_BASEQ --min-alternate-fraction \$MIN_ALT_FRAC --min-alternate-count \$MIN_ALT_COUNT"
-            
-            echo "Using config parameters: mapq=\$MIN_MAPQ, baseq=\$MIN_BASEQ, alt_frac=\$MIN_ALT_FRAC, alt_count=\$MIN_ALT_COUNT"
+            # Add parsed parameters to command
+            if [ -n "\$FREEBAYES_PARAMS" ]; then
+                FREEBAYES_CMD="\$FREEBAYES_CMD \$FREEBAYES_PARAMS"
+                echo "Using freebayes parameters: \$FREEBAYES_PARAMS"
+            fi
         fi
     else
         echo "Using default freebayes parameters"
@@ -136,7 +245,7 @@ except:
     FREEBAYES_CMD="\$FREEBAYES_CMD --vcf chunk_${chunk_id}.vcf"
     
     # Run freebayes
-    echo "Running: \$FREEBAYES_CMD"
+    echo "Full command: \$FREEBAYES_CMD"
     \$FREEBAYES_CMD
     
     # Check output and compress
