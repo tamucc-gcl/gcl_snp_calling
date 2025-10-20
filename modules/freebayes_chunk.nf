@@ -74,7 +74,12 @@ process FREEBAYES_CHUNK {
         > cnv_map.txt
         
         while read -r line; do
-            [[ "\$line" =~ ^#.*$ ]] && continue
+            # Skip comment lines (starting with #)
+            case "\$line" in
+                '#'*) continue ;;
+            esac
+            
+            # Skip empty lines
             [[ -z "\$line" ]] && continue
             
             bam_name=\$(echo "\$line" | awk '{print \$1}')
