@@ -133,7 +133,7 @@ if [ "${has_ploidy_map}" = "true" ]; then
         ploidy_value=$(echo "\$ploidy_value" | xargs)
         
         # Validate ploidy is numeric
-        if ! [[ "\$ploidy_value" =~ ^[0-9]+$ ]]; then
+        if ! [[ "\$ploidy_value" =~ ^[0-9]+\$ ]]; then
             echo "  ERROR: Invalid ploidy value '\$ploidy_value' for sample '\$sample_id'" | tee -a cnv_map_debug.txt
             continue
         fi
