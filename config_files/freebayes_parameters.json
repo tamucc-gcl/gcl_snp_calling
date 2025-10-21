@@ -1,11 +1,8 @@
 {
-  "comment": "FreeBayes v1.3.6 configuration parameters",
-  "comment_usage": "All parameters are optional. If not specified, FreeBayes defaults will be used.",
-  "comment_structure": "Parameters are organized by FreeBayes help section categories",
+  "comment": "Freebayes configuration parameters",
+  "comment_usage": "All parameters are optional. If not specified, freebayes defaults will be used.",
   
-  "input_filters": {
-    "comment": "Input filters for read quality and alignment",
-    "use_duplicate_reads": false,
+  "algorithm_parameters": {
     "min_mapping_quality": 20,
     "min_base_quality": 20,
     "min_supporting_allele_qsum": 0,
@@ -15,60 +12,46 @@
     "read_max_mismatch_fraction": 1.0,
     "read_snp_limit": null,
     "read_indel_limit": null,
-    "standard_filters": false,
+    "indel_exclusion_window": 0,
+    "min_repeat_entropy": 1,
     "min_alternate_fraction": 0.05,
     "min_alternate_count": 2,
     "min_alternate_qsum": 0,
     "min_alternate_total": 1,
     "min_coverage": 0,
-    "limit_coverage": null,
-    "skip_coverage": null,
-    "trim_complex_tail": false
-  },
-  
-  "population_model": {
-    "comment": "Population and ploidy parameters",
-    "theta": 0.001,
+    "max_coverage": null,
+    "no_partial_observations": false,
     "ploidy": 2,
     "pooled_discrete": false,
     "pooled_continuous": false,
-    "use_reference_allele": false,
-    "reference_quality": null
-  },
-  
-  "allele_scope": {
-    "comment": "Parameters controlling allele detection and haplotype calling",
-    "use_best_n_alleles": 0,
+    "use_duplicate_reads": false,
+    "no_mnps": false,
+    "no_complex": false,
+    "no_snps": false,
+    "no_indels": false,
     "max_complex_gap": 3,
     "haplotype_length": 3,
-    "min_repeat_size": 5,
-    "min_repeat_entropy": 1,
-    "no_partial_observations": false,
-    "throw_away_snp_obs": false,
-    "throw_away_indels_obs": false,
-    "throw_away_mnp_obs": false,
-    "throw_away_complex_obs": false
+    "min_repeat_length": 5,
+    "min_repeat_entropy_for_detection": 1
   },
   
-  "priors": {
-    "comment": "Prior probability settings",
-    "no_population_priors": false,
-    "hwe_priors_off": false,
-    "binomial_obs_priors_off": false,
-    "allele_balance_priors_off": false
+  "population_model_parameters": {
+    "theta": 0.001,
+    "posterior_integration_limits": "1,3",
+    "use_reference_allele": false,
+    "gvcf": false,
+    "gvcf_chunk": null
   },
   
-  "genotype_likelihoods": {
-    "comment": "Genotype likelihood calculation parameters",
-    "observation_bias": null,
+  "genotype_likelihood_parameters": {
     "base_quality_cap": null,
     "prob_contamination": 0.000000001,
     "legacy_gls": false,
     "contamination_estimates": null
   },
   
-  "algorithmic_features": {
-    "comment": "Algorithm control parameters",
+  "reporting_parameters": {
+    "genotype_qualities": false,
     "report_genotype_likelihood_max": false,
     "genotyping_max_iterations": 1000,
     "genotyping_max_banddepth": 6,
@@ -81,27 +64,7 @@
     "genotype_qualities": false
   },
   
-  "output_options": {
-    "comment": "Output format and reporting options",
-    "gvcf": false,
-    "gvcf_chunk": null,
-    "gvcf_dont_use_chunk": false,
-    "variant_input": null,
-    "only_use_input_alleles": false,
-    "haplotype_basis_alleles": null,
-    "report_all_haplotype_alleles": false,
-    "report_monomorphic": false,
-    "pvar": 0.0,
-    "strict_vcf": false
-  },
-  
-  "indel_realignment": {
-    "comment": "Indel realignment options",
-    "dont_left_align_indels": false
-  },
-  
-  "debugging": {
-    "comment": "Debug output options",
+  "additional_options": {
     "debug": false,
     "dd": false
   }
