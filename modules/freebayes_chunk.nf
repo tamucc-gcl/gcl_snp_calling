@@ -319,8 +319,10 @@ try:
     # Coverage filters
     if 'min_coverage' in algo:
         params.append(f"--min-coverage {algo['min_coverage']}")
-    if algo.get('max_coverage') is not None:
-        params.append(f"--max-coverage {algo['max_coverage']}")
+    # Note: --max-coverage is not supported in FreeBayes 1.3.6
+    # Skip this parameter to avoid errors
+    # if algo.get('max_coverage') is not None:
+    #     params.append(f"--max-coverage {algo['max_coverage']}")
     
     # Ploidy and pooling
     # Convert bash boolean string to Python boolean
@@ -430,8 +432,7 @@ try:
         print(f"echo '  - Min alternate fraction: {algo['min_alternate_fraction']}'")
     if 'min_coverage' in algo:
         print(f"echo '  - Min coverage: {algo['min_coverage']}'")
-    if 'max_coverage' in algo:
-        print(f"echo '  - Max coverage: {algo['max_coverage']}'")
+    # Removed max_coverage output since it's not supported in FreeBayes 1.3.6
     
 except Exception as e:
     print(f"# Error parsing config: {e}", file=sys.stderr)
