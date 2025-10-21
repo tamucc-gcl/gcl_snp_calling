@@ -118,7 +118,7 @@ if [ "${has_ploidy_map}" = "true" ]; then
     # Read the ploidy map file
     while IFS= read -r line || [ -n "\$line" ]; do
         # Skip comments and empty lines
-        [[ "\$line" =~ ^#.*$ ]] && continue
+        [[ "\$line" =~ ^#.*\$ ]] && continue
         [[ -z "\$line" ]] && continue
         
         # Clean the line and parse it flexibly (handles tabs or spaces)
