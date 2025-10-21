@@ -116,17 +116,24 @@ if [ "${has_ploidy_map}" = "true" ]; then
     unmatched_count=0
     
     # Read the ploidy map file
-    while IFS=\$'\\t' read -r sample_id ploidy_value || [ -n "\$sample_id" ]; do
+    while IFS= read -r line || [ -n "\$line" ]; do
         # Skip comments and empty lines
-        [[ "\$sample_id" =~ ^#.*\$ ]] && continue
-        [[ -z "\$sample_id" ]] && continue
+        [[ "\$line" =~ ^#.*$ ]] && continue
+        [[ -z "\$line" ]] && continue
         
-        # Clean whitespace and carriage returns
-        sample_id=\$(echo "\$sample_id" | tr -d '\\r' | sed 's/^[[:space:]]*//;s/[[:space:]]*\$//')
-        ploidy_value=\$(echo "\$ploidy_value" | tr -d '\\r' | sed 's/^[[:space:]]*//;s/[[:space:]]*\$//')
+        # Clean the line and parse it flexibly (handles tabs or spaces)
+        line=$(echo "\$line" | tr -d '\r')
+        
+        # Use awk to split on any whitespace (handles both tabs and multiple spaces)
+        sample_id=$(echo "\$line" | awk '{print \$1}')
+        ploidy_value=$(echo "\$line" | awk '{print \$2}')
+        
+        # Additional cleanup
+        sample_id=$(echo "\$sample_id" | xargs)
+        ploidy_value=$(echo "\$ploidy_value" | xargs)
         
         # Validate ploidy is numeric
-        if ! [[ "\$ploidy_value" =~ ^[0-9]+\$ ]]; then
+        if ! [[ "\$ploidy_value" =~ ^[0-9]+$ ]]; then
             echo "  ERROR: Invalid ploidy value '\$ploidy_value' for sample '\$sample_id'" | tee -a cnv_map_debug.txt
             continue
         fi
