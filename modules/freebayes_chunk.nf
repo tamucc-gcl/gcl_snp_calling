@@ -271,29 +271,6 @@ try:
     with open(config_file) as f:
         config = json.load(f)
     
-    algo = config.get('algorithm_parameters', {})
-    pop = config.get('population_model_parameters', {})
-    geno = config.get('genotype_likelihood_parameters', {})
-    report = config.get('reporting_parameters', {})
-    debug = config.get('additional_options', {})import json
-import sys
-
-try:
-    # Read the config file
-    config_file = '${config_file}' if '${config_file}' else None
-    if not config_file:
-        # Try to find a JSON file in current directory
-        import glob
-        json_files = glob.glob('*.json')
-        if json_files:
-            config_file = json_files[0]
-    
-    if not config_file:
-        raise FileNotFoundError("No config file found")
-    
-    with open(config_file) as f:
-        config = json.load(f)
-    
     # Extract sections based on new structure
     input_filters = config.get('input_filters', {})
     pop_model = config.get('population_model', {})
