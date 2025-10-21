@@ -1,4 +1,4 @@
-// modules/freebayes_chunk.nf - Complete version with ALL FreeBayes parameters
+// modules/freebayes_chunk.nf - Complete version with fixed ploidy map processing
 
 process FREEBAYES_CHUNK {
     
@@ -68,164 +68,162 @@ process FREEBAYES_CHUNK {
     cat chunk.bed
     
     # Process ploidy map if provided to create CNV map for FreeBayes
-    # Process ploidy map if provided to create CNV map for FreeBayes
-if [ "${has_ploidy_map}" = "true" ]; then
-    echo "================================================================"
-    echo "Creating CNV map from ploidy map"
-    echo "================================================================"
-    
-    > cnv_map.txt
-    > cnv_map_debug.txt
-    
-    # Step 1: Build inventory of available BAMs and their sample names
-    echo "Step 1: Inventorying BAM files and sample names..."
-    echo "------------------------------------------------"
-    
-    declare -A bam_samples
-    declare -A sample_to_bam
-    
-    for bam in *.bam; do
-        if [ -f "\$bam" ]; then
-            # Extract sample name from BAM header (SM tag from @RG line)
-            sm_tag=\$(samtools view -H "\$bam" | grep '^@RG' | head -1 | sed -n 's/.*SM:\\([^\\t]*\\).*/\\1/p')
+    if [ "${has_ploidy_map}" = "true" ]; then
+        echo "================================================================"
+        echo "Creating CNV map from ploidy map using Python"
+        echo "================================================================"
+        
+        # Use Python for reliable parsing
+        python3 << 'PYTHON_CNV' > cnv_map.txt
+import sys
+import subprocess
+
+# Get sample names from BAM files
+bam_samples = {}
+sample_to_bam = {}
+
+# List all BAM files
+import glob
+bam_files = glob.glob('*.bam')
+
+print("Step 1: Inventorying BAM files and sample names...", file=sys.stderr)
+print("------------------------------------------------", file=sys.stderr)
+
+for bam in bam_files:
+    # Extract sample name from BAM header
+    try:
+        result = subprocess.run(['samtools', 'view', '-H', bam], 
+                              capture_output=True, text=True)
+        for line in result.stdout.split('\\n'):
+            if line.startswith('@RG'):
+                # Look for SM tag
+                parts = line.split('\\t')
+                for part in parts:
+                    if part.startswith('SM:'):
+                        sm_tag = part[3:]
+                        break
+                else:
+                    # No SM tag found, derive from filename
+                    sm_tag = bam.replace('.filtered.bam', '').replace('.bam', '')
+                
+                bam_samples[bam] = sm_tag
+                sample_to_bam[sm_tag] = bam
+                print(f"  BAM: {bam} → Sample: {sm_tag}", file=sys.stderr)
+                break
+    except Exception as e:
+        print(f"  ERROR processing {bam}: {e}", file=sys.stderr)
+        continue
+
+print(f"  Found {len(bam_samples)} BAM files", file=sys.stderr)
+print("", file=sys.stderr)
+
+# Process ploidy map
+print("Step 2: Processing ploidy map and matching to BAMs...", file=sys.stderr)
+print("------------------------------------------------------", file=sys.stderr)
+
+matched_count = 0
+unmatched_count = 0
+
+try:
+    with open('${ploidy_map}', 'r') as f:
+        for line in f:
+            # Skip comments and empty lines
+            line = line.strip()
+            if not line or line.startswith('#'):
+                continue
             
-            # If no SM tag found, derive from filename
-            if [ -z "\$sm_tag" ]; then
-                # Remove .filtered.bam or .bam extensions
-                sm_tag="\${bam%.bam}"
-                sm_tag="\${sm_tag%.filtered}"
-                echo "  WARNING: No SM tag in \$bam, using filename-derived name: \$sm_tag"
-            fi
+            # Parse the line (handle tabs or spaces)
+            parts = line.split()
+            if len(parts) < 2:
+                continue
+                
+            sample_id = parts[0]
+            try:
+                ploidy_value = int(parts[1])
+            except ValueError:
+                print(f"  ERROR: Invalid ploidy value '{parts[1]}' for sample '{sample_id}'", file=sys.stderr)
+                continue
             
-            bam_samples["\$bam"]="\$sm_tag"
-            sample_to_bam["\$sm_tag"]="\$bam"
-            
-            echo "  BAM: \$bam → Sample: \$sm_tag" | tee -a cnv_map_debug.txt
-        fi
-    done
-    
-    total_bams=\${#bam_samples[@]}
-    echo "  Found \$total_bams BAM files"
-    echo ""
-    
-    # Step 2: Process ploidy map and match to BAM samples
-    echo "Step 2: Processing ploidy map and matching to BAMs..."
-    echo "------------------------------------------------------"
-    
-    matched_count=0
-    unmatched_count=0
-    
-    # Read the ploidy map file
-    while IFS= read -r line || [ -n "\$line" ]; do
-        # Skip comments and empty lines
-        [[ "\$line" =~ ^#.*\$ ]] && continue
-        [[ -z "\$line" ]] && continue
-        
-        # Clean the line and parse it flexibly (handles tabs or spaces)
-        line=\$(echo "\$line" | tr -d '\r')
-        
-        # Use awk to split on any whitespace (handles both tabs and multiple spaces)
-        sample_id=\$(echo "\$line" | awk '{print \$1}')
-        ploidy_value=\$(echo "\$line" | awk '{print \$2}')
-        
-        # Additional cleanup
-        sample_id=\$(echo "\$sample_id" | xargs)
-        ploidy_value=\$(echo "\$ploidy_value" | xargs)
-        
-        # Validate ploidy is numeric
-        if ! [[ "\$ploidy_value" =~ ^[0-9]+\$ ]]; then
-            echo "  ERROR: Invalid ploidy value '\$ploidy_value' for sample '\$sample_id'" | tee -a cnv_map_debug.txt
+            # Check if we have a BAM for this sample
+            if sample_id in sample_to_bam:
+                # Found matching BAM
+                print(f"{sample_id}\\t{ploidy_value}")
+                print(f"  ✔ Matched: {sample_id} (ploidy={ploidy_value}) → BAM: {sample_to_bam[sample_id]}", file=sys.stderr)
+                matched_count += 1
+            else:
+                # No matching BAM found
+                print(f"  ✗ Unmatched: {sample_id} (ploidy={ploidy_value}) - No corresponding BAM found", file=sys.stderr)
+                
+                # Try to find similar sample names
+                print("    Checking for similar sample names...", file=sys.stderr)
+                for bam_sample in sample_to_bam.keys():
+                    if sample_id in bam_sample or bam_sample in sample_id:
+                        print(f"    → Possible match: '{bam_sample}' in {sample_to_bam[bam_sample]}", file=sys.stderr)
+                unmatched_count += 1
+
+except Exception as e:
+    print(f"ERROR reading ploidy map: {e}", file=sys.stderr)
+    sys.exit(1)
+
+print("", file=sys.stderr)
+print("Step 3: Summary", file=sys.stderr)
+print("---------------", file=sys.stderr)
+print(f"  Ploidy map entries processed: {matched_count + unmatched_count}", file=sys.stderr)
+print(f"  Successfully matched: {matched_count}", file=sys.stderr)
+print(f"  Unmatched entries: {unmatched_count}", file=sys.stderr)
+print(f"  Total BAMs available: {len(bam_samples)}", file=sys.stderr)
+
+# Check for BAMs without ploidy information
+print("", file=sys.stderr)
+print("Step 4: Checking for BAMs without ploidy information...", file=sys.stderr)
+print("--------------------------------------------------------", file=sys.stderr)
+
+# Get list of matched samples
+matched_samples = set()
+with open('${ploidy_map}', 'r') as f:
+    for line in f:
+        line = line.strip()
+        if not line or line.startswith('#'):
             continue
-        fi
+        parts = line.split()
+        if len(parts) >= 2 and parts[0] in sample_to_bam:
+            matched_samples.add(parts[0])
+
+bams_without_ploidy = 0
+for bam, sample in bam_samples.items():
+    if sample not in matched_samples:
+        print(f"  WARNING: BAM '{bam}' (sample: {sample}) has no ploidy information", file=sys.stderr)
+        bams_without_ploidy += 1
+
+if bams_without_ploidy > 0:
+    print(f"  → {bams_without_ploidy} BAM(s) will use default ploidy or global setting", file=sys.stderr)
+else:
+    print("  → All BAMs have ploidy information", file=sys.stderr)
+
+print("", file=sys.stderr)
+print("================================================================", file=sys.stderr)
+
+if matched_count == 0:
+    print("ERROR: CNV map is empty! No samples could be matched.", file=sys.stderr)
+    print("Please check that sample names in your ploidy map match the SM tags in your BAM files.", file=sys.stderr)
+else:
+    print(f"SUCCESS: CNV map created with {matched_count} sample(s)", file=sys.stderr)
+PYTHON_CNV
         
-        # Check if we have a BAM for this sample
-        if [ ! -z "\${sample_to_bam[\$sample_id]}" ]; then
-            # Found matching BAM
-            echo -e "\$sample_id\\t\$ploidy_value" >> cnv_map.txt
-            echo "  ✓ Matched: \$sample_id (ploidy=\$ploidy_value) → BAM: \${sample_to_bam[\$sample_id]}" | tee -a cnv_map_debug.txt
-            ((matched_count++))
-        else
-            # No matching BAM found
-            echo "  ✗ Unmatched: \$sample_id (ploidy=\$ploidy_value) - No corresponding BAM found" | tee -a cnv_map_debug.txt
-            
-            # Try to find similar sample names for debugging
-            echo "    Checking for similar sample names..."
-            for bam_sample in "\${!sample_to_bam[@]}"; do
-                if [[ "\$bam_sample" == *"\$sample_id"* ]] || [[ "\$sample_id" == *"\$bam_sample"* ]]; then
-                    echo "    → Possible match: '\$bam_sample' in \${sample_to_bam[\$bam_sample]}"
-                fi
+        # Check if CNV map was created successfully
+        if [ -s cnv_map.txt ]; then
+            echo "CNV map created successfully:"
+            echo "-----------------------"
+            cat cnv_map.txt | while IFS=\$'\\t' read -r sample ploidy; do
+                echo "  \$sample: ploidy=\$ploidy"
             done
-            ((unmatched_count++))
+            echo ""
+            CNV_MAP_OPTION="--cnv-map cnv_map.txt"
+        else
+            echo "WARNING: CNV map is empty or was not created"
+            echo "FreeBayes will use default ploidy for all samples"
+            CNV_MAP_OPTION=""
         fi
-    done < ${ploidy_map}
-    
-    echo ""
-    echo "Step 3: Summary"
-    echo "---------------"
-    echo "  Ploidy map entries processed: \$((matched_count + unmatched_count))"
-    echo "  Successfully matched: \$matched_count"
-    echo "  Unmatched entries: \$unmatched_count"
-    echo "  Total BAMs available: \$total_bams"
-    
-    # Check for BAMs without ploidy information
-    echo ""
-    echo "Step 4: Checking for BAMs without ploidy information..."
-    echo "--------------------------------------------------------"
-    
-    bams_without_ploidy=0
-    while IFS= read -r line; do
-        bam=\$(echo "\$line" | cut -f1)
-        sample=\$(echo "\$line" | cut -f2)
-        if ! grep -q "^\$sample\\s" cnv_map.txt 2>/dev/null; then
-            echo "  WARNING: BAM '\$bam' (sample: \$sample) has no ploidy information"
-            ((bams_without_ploidy++))
-        fi
-    done < <(
-        for bam in "\${!bam_samples[@]}"; do
-            echo -e "\$bam\\t\${bam_samples[\$bam]}"
-        done
-    )
-    
-    if [ \$bams_without_ploidy -gt 0 ]; then
-        echo "  → \$bams_without_ploidy BAM(s) will use default ploidy or global setting"
-    else
-        echo "  → All BAMs have ploidy information"
-    fi
-    
-    echo ""
-    echo "================================================================"
-    
-    # Final validation
-    if [ ! -s cnv_map.txt ]; then
-        echo "ERROR: CNV map is empty! No samples could be matched."
-        echo "This will cause FreeBayes to use default ploidy for all samples."
-        echo ""
-        echo "Debug information saved to: cnv_map_debug.txt"
-        echo "Please check that sample names in your ploidy map match the SM tags in your BAM files."
-        
-        # Don't set CNV_MAP_OPTION if map is empty
-        CNV_MAP_OPTION=""
-    else
-        echo "SUCCESS: CNV map created with \$matched_count sample(s)"
-        echo ""
-        echo "Final CNV map contents:"
-        echo "-----------------------"
-        cat cnv_map.txt | while IFS=\$'\\t' read -r sample ploidy; do
-            echo "  \$sample: ploidy=\$ploidy"
-        done
-        echo ""
-        
-        CNV_MAP_OPTION="--cnv-map cnv_map.txt"
-    fi
-    
-    # Save debug information
-    echo "" >> cnv_map_debug.txt
-    echo "Final CNV map:" >> cnv_map_debug.txt
-    if [ -s cnv_map.txt ]; then
-        cat cnv_map.txt >> cnv_map_debug.txt
-    else
-        echo "(empty)" >> cnv_map_debug.txt
-    fi
     else
         echo "No ploidy map provided - using global ploidy from config or FreeBayes default"
         CNV_MAP_OPTION=""
