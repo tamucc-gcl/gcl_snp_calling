@@ -251,7 +251,19 @@ import json
 import sys
 
 try:
-    with open('${config_file}' if '${config_file}' != '' else next((f for f in ['${config_file}'] + [f for f in __import__('glob').glob('*.json')] if f), None)) as f:
+    # Read the config file
+    config_file = '${config_file}' if '${config_file}' else None
+    if not config_file:
+        # Try to find a JSON file in current directory
+        import glob
+        json_files = glob.glob('*.json')
+        if json_files:
+            config_file = json_files[0]
+    
+    if not config_file:
+        raise FileNotFoundError("No config file found")
+    
+    with open(config_file) as f:
         config = json.load(f)
     
     algo = config.get('algorithm_parameters', {})
@@ -306,9 +318,16 @@ try:
         params.append(f"--max-coverage {algo['max_coverage']}")
     
     # Ploidy and pooling
-    if not ${has_ploidy_map} and 'ploidy' in algo:
+    # Convert bash boolean string to Python boolean
+    has_ploidy_map = '${has_ploidy_map}' == 'true'
+    
+    # Only add global ploidy if no ploidy map is provided
+    if not has_ploidy_map and 'ploidy' in algo:
         params.append(f"--ploidy {algo['ploidy']}")
         print(f"echo 'Global ploidy set to: {algo['ploidy']}'")
+    elif has_ploidy_map:
+        print("echo 'Using per-sample ploidy from CNV map'")
+    
     if algo.get('pooled_discrete'):
         params.append("--pooled-discrete")
         print("echo 'Using pooled-discrete mode'")
@@ -397,10 +416,23 @@ try:
     param_count = len(params)
     print(f"echo 'Loaded {param_count} parameters from config file'")
     
+    # List key parameters for confirmation
+    if algo.get('pooled_discrete'):
+        print("echo '  - Pooled discrete mode: ENABLED'")
+    if algo.get('pooled_continuous'):
+        print("echo '  - Pooled continuous mode: ENABLED'")
+    if 'min_alternate_fraction' in algo:
+        print(f"echo '  - Min alternate fraction: {algo['min_alternate_fraction']}'")
+    if 'min_coverage' in algo:
+        print(f"echo '  - Min coverage: {algo['min_coverage']}'")
+    if 'max_coverage' in algo:
+        print(f"echo '  - Max coverage: {algo['max_coverage']}'")
+    
 except Exception as e:
     print(f"# Error parsing config: {e}", file=sys.stderr)
     print("FREEBAYES_PARAMS=''")
     print("echo 'WARNING: Failed to parse config file, using defaults'")
+    print(f"echo 'Error details: {e}'")
 PYTHON_PARSE
             
             # Source the parameters
