@@ -275,146 +275,200 @@ try:
     pop = config.get('population_model_parameters', {})
     geno = config.get('genotype_likelihood_parameters', {})
     report = config.get('reporting_parameters', {})
-    debug = config.get('additional_options', {})
+    debug = config.get('additional_options', {})import json
+import sys
+
+try:
+    # Read the config file
+    config_file = '${config_file}' if '${config_file}' else None
+    if not config_file:
+        # Try to find a JSON file in current directory
+        import glob
+        json_files = glob.glob('*.json')
+        if json_files:
+            config_file = json_files[0]
+    
+    if not config_file:
+        raise FileNotFoundError("No config file found")
+    
+    with open(config_file) as f:
+        config = json.load(f)
+    
+    # Extract sections based on new structure
+    input_filters = config.get('input_filters', {})
+    pop_model = config.get('population_model', {})
+    allele_scope = config.get('allele_scope', {})
+    priors = config.get('priors', {})
+    genotype_lh = config.get('genotype_likelihoods', {})
+    algorithmic = config.get('algorithmic_features', {})
+    output_opts = config.get('output_options', {})
+    indel_realign = config.get('indel_realignment', {})
+    debug_opts = config.get('debugging', {})
     
     params = []
     
-    # ========== ALGORITHM PARAMETERS ==========
-    # Quality filters
-    if 'min_mapping_quality' in algo:
-        params.append(f"--min-mapping-quality {algo['min_mapping_quality']}")
-    if 'min_base_quality' in algo:
-        params.append(f"--min-base-quality {algo['min_base_quality']}")
-    if 'min_supporting_allele_qsum' in algo:
-        params.append(f"--min-supporting-allele-qsum {algo['min_supporting_allele_qsum']}")
-    if 'min_supporting_mapping_qsum' in algo:
-        params.append(f"--min-supporting-mapping-qsum {algo['min_supporting_mapping_qsum']}")
+    # ========== INPUT FILTERS ==========
+    if input_filters.get('use_duplicate_reads'):
+        params.append("--use-duplicate-reads")
+    if 'min_mapping_quality' in input_filters:
+        params.append(f"--min-mapping-quality {input_filters['min_mapping_quality']}")
+    if 'min_base_quality' in input_filters:
+        params.append(f"--min-base-quality {input_filters['min_base_quality']}")
+    if 'min_supporting_allele_qsum' in input_filters:
+        params.append(f"--min-supporting-allele-qsum {input_filters['min_supporting_allele_qsum']}")
+    if 'min_supporting_mapping_qsum' in input_filters:
+        params.append(f"--min-supporting-mapping-qsum {input_filters['min_supporting_mapping_qsum']}")
+    if 'mismatch_base_quality_threshold' in input_filters:
+        params.append(f"--mismatch-base-quality-threshold {input_filters['mismatch_base_quality_threshold']}")
+    if input_filters.get('read_mismatch_limit') is not None:
+        params.append(f"--read-mismatch-limit {input_filters['read_mismatch_limit']}")
+    if 'read_max_mismatch_fraction' in input_filters:
+        params.append(f"--read-max-mismatch-fraction {input_filters['read_max_mismatch_fraction']}")
+    if input_filters.get('read_snp_limit') is not None:
+        params.append(f"--read-snp-limit {input_filters['read_snp_limit']}")
+    if input_filters.get('read_indel_limit') is not None:
+        params.append(f"--read-indel-limit {input_filters['read_indel_limit']}")
+    if input_filters.get('standard_filters'):
+        params.append("--standard-filters")
+    if 'min_alternate_fraction' in input_filters:
+        params.append(f"--min-alternate-fraction {input_filters['min_alternate_fraction']}")
+    if 'min_alternate_count' in input_filters:
+        params.append(f"--min-alternate-count {input_filters['min_alternate_count']}")
+    if 'min_alternate_qsum' in input_filters:
+        params.append(f"--min-alternate-qsum {input_filters['min_alternate_qsum']}")
+    if 'min_alternate_total' in input_filters:
+        params.append(f"--min-alternate-total {input_filters['min_alternate_total']}")
+    if 'min_coverage' in input_filters:
+        params.append(f"--min-coverage {input_filters['min_coverage']}")
+    if input_filters.get('limit_coverage') is not None:
+        params.append(f"--limit-coverage {input_filters['limit_coverage']}")
+    if input_filters.get('skip_coverage') is not None:
+        params.append(f"--skip-coverage {input_filters['skip_coverage']}")
+    if input_filters.get('trim_complex_tail'):
+        params.append("--trim-complex-tail")
     
-    # Mismatch filters
-    if 'mismatch_base_quality_threshold' in algo:
-        params.append(f"--mismatch-base-quality-threshold {algo['mismatch_base_quality_threshold']}")
-    if algo.get('read_mismatch_limit') is not None:
-        params.append(f"--read-mismatch-limit {algo['read_mismatch_limit']}")
-    if 'read_max_mismatch_fraction' in algo:
-        params.append(f"--read-max-mismatch-fraction {algo['read_max_mismatch_fraction']}")
+    # ========== POPULATION MODEL ==========
+    if 'theta' in pop_model:
+        params.append(f"--theta {pop_model['theta']}")
     
-    # Read filters  
-    if algo.get('read_snp_limit') is not None:
-        params.append(f"--read-snp-limit {algo['read_snp_limit']}")
-    if algo.get('read_indel_limit') is not None:
-        params.append(f"--read-indel-limit {algo['read_indel_limit']}")
-    if 'indel_exclusion_window' in algo:
-        params.append(f"--indel-exclusion-window {algo['indel_exclusion_window']}")
-    
-    # Allele filters
-    if 'min_alternate_fraction' in algo:
-        params.append(f"--min-alternate-fraction {algo['min_alternate_fraction']}")
-    if 'min_alternate_count' in algo:
-        params.append(f"--min-alternate-count {algo['min_alternate_count']}")
-    if 'min_alternate_qsum' in algo:
-        params.append(f"--min-alternate-qsum {algo['min_alternate_qsum']}")
-    if 'min_alternate_total' in algo:
-        params.append(f"--min-alternate-total {algo['min_alternate_total']}")
-    
-    # Coverage filters
-    if 'min_coverage' in algo:
-        params.append(f"--min-coverage {algo['min_coverage']}")
-    # Note: --max-coverage is not supported in FreeBayes 1.3.6
-    # Skip this parameter to avoid errors
-    # if algo.get('max_coverage') is not None:
-    #     params.append(f"--max-coverage {algo['max_coverage']}")
-    
-    # Ploidy and pooling
     # Convert bash boolean string to Python boolean
     has_ploidy_map = '${has_ploidy_map}' == 'true'
     
     # Only add global ploidy if no ploidy map is provided
-    if not has_ploidy_map and 'ploidy' in algo:
-        params.append(f"--ploidy {algo['ploidy']}")
-        print(f"echo 'Global ploidy set to: {algo['ploidy']}'")
+    if not has_ploidy_map and 'ploidy' in pop_model:
+        params.append(f"--ploidy {pop_model['ploidy']}")
+        print(f"echo 'Global ploidy set to: {pop_model['ploidy']}'")
     elif has_ploidy_map:
         print("echo 'Using per-sample ploidy from CNV map'")
     
-    if algo.get('pooled_discrete'):
+    if pop_model.get('pooled_discrete'):
         params.append("--pooled-discrete")
         print("echo 'Using pooled-discrete mode'")
-    elif algo.get('pooled_continuous'):
+    if pop_model.get('pooled_continuous'):
         params.append("--pooled-continuous")
         print("echo 'Using pooled-continuous mode'")
-    
-    # Variant type controls
-    if algo.get('use_duplicate_reads'):
-        params.append("--use-duplicate-reads")
-    if algo.get('no_partial_observations'):
-        params.append("--no-partial-observations")
-    if algo.get('no_mnps'):
-        params.append("--no-mnps")
-    if algo.get('no_complex'):
-        params.append("--no-complex")
-    if algo.get('no_snps'):
-        params.append("--no-snps")
-    if algo.get('no_indels'):
-        params.append("--no-indels")
-    
-    # Haplotype and repeat parameters
-    if 'haplotype_length' in algo:
-        params.append(f"--haplotype-length {algo['haplotype_length']}")
-    if 'max_complex_gap' in algo:
-        params.append(f"--max-complex-gap {algo['max_complex_gap']}")
-    if 'min_repeat_entropy' in algo:
-        params.append(f"--min-repeat-entropy {algo['min_repeat_entropy']}")
-    if 'min_repeat_length' in algo:
-        params.append(f"--min-repeat-length {algo['min_repeat_length']}")
-    # Note: min_repeat_entropy_for_detection doesn't have a direct FreeBayes flag
-    
-    # ========== POPULATION MODEL PARAMETERS ==========
-    if 'theta' in pop:
-        params.append(f"--theta {pop['theta']}")
-    if 'posterior_integration_limits' in pop:
-        params.append(f"--posterior-integration-limits {pop['posterior_integration_limits']}")
-    if pop.get('use_reference_allele'):
+    if pop_model.get('use_reference_allele'):
         params.append("--use-reference-allele")
-    if pop.get('gvcf'):
-        params.append("--gvcf")
-    if pop.get('gvcf_chunk') is not None:
-        params.append(f"--gvcf-chunk {pop['gvcf_chunk']}")
+    if pop_model.get('reference_quality'):
+        params.append(f"--reference-quality {pop_model['reference_quality']}")
     
-    # ========== GENOTYPE LIKELIHOOD PARAMETERS ==========
-    if geno.get('base_quality_cap') is not None:
-        params.append(f"--base-quality-cap {geno['base_quality_cap']}")
-    if 'prob_contamination' in geno:
-        params.append(f"--prob-contamination {geno['prob_contamination']}")
-    if geno.get('legacy_gls'):
+    # ========== ALLELE SCOPE ==========
+    if 'use_best_n_alleles' in allele_scope and allele_scope['use_best_n_alleles'] != 0:
+        params.append(f"--use-best-n-alleles {allele_scope['use_best_n_alleles']}")
+    if 'max_complex_gap' in allele_scope:
+        params.append(f"--max-complex-gap {allele_scope['max_complex_gap']}")
+    if 'haplotype_length' in allele_scope:
+        params.append(f"--haplotype-length {allele_scope['haplotype_length']}")
+    if 'min_repeat_size' in allele_scope:
+        params.append(f"--min-repeat-size {allele_scope['min_repeat_size']}")
+    if 'min_repeat_entropy' in allele_scope:
+        params.append(f"--min-repeat-entropy {allele_scope['min_repeat_entropy']}")
+    if allele_scope.get('no_partial_observations'):
+        params.append("--no-partial-observations")
+    if allele_scope.get('throw_away_snp_obs'):
+        params.append("--throw-away-snp-obs")
+    if allele_scope.get('throw_away_indels_obs'):
+        params.append("--throw-away-indels-obs")
+    if allele_scope.get('throw_away_mnp_obs'):
+        params.append("--throw-away-mnp-obs")
+    if allele_scope.get('throw_away_complex_obs'):
+        params.append("--throw-away-complex-obs")
+    
+    # ========== PRIORS ==========
+    if priors.get('no_population_priors'):
+        params.append("--no-population-priors")
+    if priors.get('hwe_priors_off'):
+        params.append("--hwe-priors-off")
+    if priors.get('binomial_obs_priors_off'):
+        params.append("--binomial-obs-priors-off")
+    if priors.get('allele_balance_priors_off'):
+        params.append("--allele-balance-priors-off")
+    
+    # ========== GENOTYPE LIKELIHOODS ==========
+    if genotype_lh.get('observation_bias'):
+        params.append(f"--observation-bias {genotype_lh['observation_bias']}")
+    if genotype_lh.get('base_quality_cap') is not None:
+        params.append(f"--base-quality-cap {genotype_lh['base_quality_cap']}")
+    if 'prob_contamination' in genotype_lh:
+        params.append(f"--prob-contamination {genotype_lh['prob_contamination']}")
+    if genotype_lh.get('legacy_gls'):
         params.append("--legacy-gls")
-    if geno.get('contamination_estimates'):
-        params.append(f"--contamination-estimates {geno['contamination_estimates']}")
+    if genotype_lh.get('contamination_estimates'):
+        params.append(f"--contamination-estimates {genotype_lh['contamination_estimates']}")
     
-    # ========== REPORTING PARAMETERS ==========
-    if report.get('genotype_qualities'):
-        params.append("--genotype-qualities")
-    if report.get('report_genotype_likelihood_max'):
+    # ========== ALGORITHMIC FEATURES ==========
+    if algorithmic.get('report_genotype_likelihood_max'):
         params.append("--report-genotype-likelihood-max")
-    if 'genotyping_max_iterations' in report:
-        params.append(f"--genotyping-max-iterations {report['genotyping_max_iterations']}")
-    if 'genotyping_max_banddepth' in report:
-        params.append(f"--genotyping-max-banddepth {report['genotyping_max_banddepth']}")
-    # Note: posterior_integration_limits is duplicated in report section
-    if report.get('exclude_unobserved_genotypes'):
+    if 'genotyping_max_iterations' in algorithmic:
+        params.append(f"--genotyping-max-iterations {algorithmic['genotyping_max_iterations']}")
+    if 'genotyping_max_banddepth' in algorithmic:
+        params.append(f"--genotyping-max-banddepth {algorithmic['genotyping_max_banddepth']}")
+    if 'posterior_integration_limits' in algorithmic:
+        params.append(f"--posterior-integration-limits {algorithmic['posterior_integration_limits']}")
+    if algorithmic.get('exclude_unobserved_genotypes'):
         params.append("--exclude-unobserved-genotypes")
-    if report.get('genotype_variant_threshold') is not None:
-        params.append(f"--genotype-variant-threshold {report['genotype_variant_threshold']}")
-    if report.get('use_mapping_quality'):
+    if algorithmic.get('genotype_variant_threshold') is not None:
+        params.append(f"--genotype-variant-threshold {algorithmic['genotype_variant_threshold']}")
+    if algorithmic.get('use_mapping_quality'):
         params.append("--use-mapping-quality")
-    if report.get('harmonic_indel_quality'):
+    if algorithmic.get('harmonic_indel_quality'):
         params.append("--harmonic-indel-quality")
-    if 'read_dependence_factor' in report:
-        params.append(f"--read-dependence-factor {report['read_dependence_factor']}")
+    if 'read_dependence_factor' in algorithmic:
+        params.append(f"--read-dependence-factor {algorithmic['read_dependence_factor']}")
+    if algorithmic.get('genotype_qualities'):
+        params.append("--genotype-qualities")
     
-    # ========== ADDITIONAL/DEBUG OPTIONS ==========
-    if debug.get('debug'):
+    # ========== OUTPUT OPTIONS ==========
+    if output_opts.get('gvcf'):
+        params.append("--gvcf")
+    if output_opts.get('gvcf_chunk') is not None:
+        params.append(f"--gvcf-chunk {output_opts['gvcf_chunk']}")
+    if output_opts.get('gvcf_dont_use_chunk'):
+        params.append("--gvcf-dont-use-chunk true")
+    if output_opts.get('variant_input'):
+        params.append(f"--variant-input {output_opts['variant_input']}")
+    if output_opts.get('only_use_input_alleles'):
+        params.append("--only-use-input-alleles")
+    if output_opts.get('haplotype_basis_alleles'):
+        params.append(f"--haplotype-basis-alleles {output_opts['haplotype_basis_alleles']}")
+    if output_opts.get('report_all_haplotype_alleles'):
+        params.append("--report-all-haplotype-alleles")
+    if output_opts.get('report_monomorphic'):
+        params.append("--report-monomorphic")
+    if 'pvar' in output_opts and output_opts['pvar'] > 0:
+        params.append(f"--pvar {output_opts['pvar']}")
+    if output_opts.get('strict_vcf'):
+        params.append("--strict-vcf")
+    
+    # ========== INDEL REALIGNMENT ==========
+    if indel_realign.get('dont_left_align_indels'):
+        params.append("--dont-left-align-indels")
+    
+    # ========== DEBUGGING ==========
+    if debug_opts.get('debug'):
         params.append("--debug")
-    if debug.get('dd'):
-        params.append("--dd")
+    if debug_opts.get('dd'):
+        params.append("-dd")
     
     # Output the parameters
     print(f"FREEBAYES_PARAMS='{' '.join(params)}'")
@@ -424,15 +478,16 @@ try:
     print(f"echo 'Loaded {param_count} parameters from config file'")
     
     # List key parameters for confirmation
-    if algo.get('pooled_discrete'):
+    if pop_model.get('pooled_discrete'):
         print("echo '  - Pooled discrete mode: ENABLED'")
-    if algo.get('pooled_continuous'):
+    if pop_model.get('pooled_continuous'):
         print("echo '  - Pooled continuous mode: ENABLED'")
-    if 'min_alternate_fraction' in algo:
-        print(f"echo '  - Min alternate fraction: {algo['min_alternate_fraction']}'")
-    if 'min_coverage' in algo:
-        print(f"echo '  - Min coverage: {algo['min_coverage']}'")
-    # Removed max_coverage output since it's not supported in FreeBayes 1.3.6
+    if 'min_alternate_fraction' in input_filters:
+        print(f"echo '  - Min alternate fraction: {input_filters['min_alternate_fraction']}'")
+    if 'min_coverage' in input_filters:
+        print(f"echo '  - Min coverage: {input_filters['min_coverage']}'")
+    if 'limit_coverage' in input_filters:
+        print(f"echo '  - Limit coverage: {input_filters['limit_coverage']}'")
     
 except Exception as e:
     print(f"# Error parsing config: {e}", file=sys.stderr)
