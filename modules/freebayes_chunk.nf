@@ -122,15 +122,15 @@ if [ "${has_ploidy_map}" = "true" ]; then
         [[ -z "\$line" ]] && continue
         
         # Clean the line and parse it flexibly (handles tabs or spaces)
-        line=$(echo "\$line" | tr -d '\r')
+        line=\$(echo "\$line" | tr -d '\r')
         
         # Use awk to split on any whitespace (handles both tabs and multiple spaces)
-        sample_id=$(echo "\$line" | awk '{print \$1}')
-        ploidy_value=$(echo "\$line" | awk '{print \$2}')
+        sample_id=\$(echo "\$line" | awk '{print \$1}')
+        ploidy_value=\$(echo "\$line" | awk '{print \$2}')
         
         # Additional cleanup
-        sample_id=$(echo "\$sample_id" | xargs)
-        ploidy_value=$(echo "\$ploidy_value" | xargs)
+        sample_id=\$(echo "\$sample_id" | xargs)
+        ploidy_value=\$(echo "\$ploidy_value" | xargs)
         
         # Validate ploidy is numeric
         if ! [[ "\$ploidy_value" =~ ^[0-9]+\$ ]]; then
