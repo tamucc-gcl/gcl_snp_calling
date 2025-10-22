@@ -45,7 +45,7 @@
     "min_repeat_entropy": 1,
     "no_partial_observations": false,
     "throw_away_snp_obs": false,
-    "throw_away_indels_obs": false,
+    "throw_away_indel_obs": false,
     "throw_away_mnp_obs": false,
     "throw_away_complex_obs": false
   },

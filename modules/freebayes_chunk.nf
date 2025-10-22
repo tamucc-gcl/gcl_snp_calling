@@ -364,8 +364,8 @@ try:
         params.append("--no-partial-observations")
     if allele_scope.get('throw_away_snp_obs'):
         params.append("--throw-away-snp-obs")
-    if allele_scope.get('throw_away_indels_obs'):
-        params.append("--throw-away-indels-obs")
+    if allele_scope.get('throw_away_indel_obs'):
+        params.append("--throw-away-indel-obs")
     if allele_scope.get('throw_away_mnp_obs'):
         params.append("--throw-away-mnp-obs")
     if allele_scope.get('throw_away_complex_obs'):
