@@ -196,12 +196,12 @@ PYTHON_SCRIPT
     # 5) Mark duplicates (marks; use -r to remove)
     samtools markdup -@ ${task.cpus ?: 8} ${bam.baseName}.csrt.bam ${bam.baseName}.bam
 
-    # 6) Index final BAM
-    samtools index -@ ${task.cpus ?: 8} ${bam.baseName}.bam
-
     # Optional: clean up intermediates to save space
     rm -f ${bam.baseName}.filtered.bam ${bam.baseName}.nsrt.bam ${bam.baseName}.fxmt.bam ${bam.baseName}.csrt.bam temp_filtered.bam
+
+    # 6) Index final BAM
     mv ${bam.baseName}.bam ${bam.baseName}.filtered.bam
+    samtools index -@ ${task.cpus ?: 8} ${bam.baseName}.filtered.bam
     
     # Print statistics
     echo ""
