@@ -4,7 +4,7 @@ process multiqc {
     tag "${step_name}"
     
     // Only publish the HTML report to publishDir
-    publishDir "${params.outdir}/multiqc_reports", mode: 'copy', pattern: "*.html"
+    publishDir "${params.output_dir}/multiqc_reports", mode: 'copy', pattern: "*.html"
 
     input:
         path(input_files)
