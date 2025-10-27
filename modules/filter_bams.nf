@@ -184,11 +184,24 @@ PYTHON_SCRIPT
         mv temp_filtered.bam ${bam.baseName}.filtered.bam
     fi
     
-    # Index the filtered BAM
-    samtools index -@ ${task.cpus} ${bam.baseName}.filtered.bam
-    
-    # Clean up
-    rm -f temp_filtered.bam
+    # 2) Name-sort (required before fixmate)
+    samtools sort -@ ${task.cpus ?: 8} -n -o ${bam.baseName}.nsrt.bam ${bam.baseName}.filtered.bam
+
+    # 3) Fixmate (adds required ms/MC tags for paired-end)
+    samtools fixmate -@ ${task.cpus ?: 8} -m ${bam.baseName}.nsrt.bam ${bam.baseName}.fxmt.bam
+
+    # 4) Coordinate-sort for markdup
+    samtools sort -@ ${task.cpus ?: 8} -o ${bam.baseName}.csrt.bam ${bam.baseName}.fxmt.bam
+
+    # 5) Mark duplicates (marks; use -r to remove)
+    samtools markdup -@ ${task.cpus ?: 8} ${bam.baseName}.csrt.bam ${bam.baseName}.bam
+
+    # 6) Index final BAM
+    samtools index -@ ${task.cpus ?: 8} ${bam.baseName}.bam
+
+    # Optional: clean up intermediates to save space
+    rm -f ${bam.baseName}.filtered.bam ${bam.baseName}.nsrt.bam ${bam.baseName}.fxmt.bam ${bam.baseName}.csrt.bam temp_filtered.bam
+    mv ${bam.baseName}.bam ${bam.baseName}.filtered.bam
     
     # Print statistics
     echo ""
