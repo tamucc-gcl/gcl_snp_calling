@@ -120,14 +120,6 @@ workflow {
         Channel.value('raw_bams')
     )
 
-    multiqc_mapping_out = multiqc_mapping(
-        samtools_stats.out
-            .map{ sid, stats, flagstats -> [stats, flagstats] }
-            .flatten()
-            .collect(),
-        Channel.value('mapping')
-    )
-
     // Process BAM files - either filter them or use them directly
     if (params.bam_filter_config) {
         // Filter BAMs in parallel
