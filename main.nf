@@ -8,6 +8,10 @@ include { FILTER_BAMS } from './modules/filter_bams'
 include { FREEBAYES_CHUNK } from './modules/freebayes_chunk'
 include { COMBINE_VCFS } from './modules/combine_vcfs'
 include { SUMMARIZE_VCFS } from './modules/summarize_vcfs'
+include { samtools_stats as SAMTOOLS_STATS_RAW } from './modules/samtools_stats'
+include { samtools_stats as SAMTOOLS_STATS_FILTERED } from './modules/samtools_stats'
+include { multiqc as MULTIQC_RAW_BAMS } from './modules/multiqc'
+include { multiqc as MULTIQC_FILTERED_BAMS } from './modules/multiqc'
 
 // Parameters
 params.bams = "*.bam"
@@ -94,6 +98,36 @@ workflow {
         ploidy_map_ch = Channel.value(file('NO_FILE'))
     }
     
+    // Process original BAM files for QC
+    raw_bam_pairs_ch = Channel.fromPath(params.bams, checkIfExists: true)
+        .map { bam ->
+            def bai = file("${bam}.bai")
+            if (!bai.exists()) {
+                error "BAM index file not found: ${bai}. Please run 'samtools index ${bam}'"
+            }
+            return tuple(bam.baseName, bam, bai)
+        }
+    
+    // Run samtools stats on raw BAMs
+    raw_bam_stats = SAMTOOLS_STATS_RAW(raw_bam_pairs_ch)
+    
+    // Run MultiQC on raw BAM stats
+    MULTIQC_RAW_BAMS(
+        raw_bam_stats
+            .map { sid, stats, flagstats -> [stats, flagstats] }
+            .flatten()
+            .collect(),
+        Channel.value('raw_bams')
+    )
+
+    multiqc_mapping_out = multiqc_mapping(
+        samtools_stats.out
+            .map{ sid, stats, flagstats -> [stats, flagstats] }
+            .flatten()
+            .collect(),
+        Channel.value('mapping')
+    )
+
     // Process BAM files - either filter them or use them directly
     if (params.bam_filter_config) {
         // Filter BAMs in parallel
@@ -113,6 +147,22 @@ workflow {
             bam_filter_config_ch
         )
         
+        // Run samtools stats on filtered BAMs
+        filtered_bam_stats = SAMTOOLS_STATS_FILTERED(
+            filtered_bams.map { bam, bai -> 
+                tuple(bam.baseName.replace('.filtered', ''), bam, bai)
+            }
+        )
+        
+        // Run MultiQC on filtered BAM stats
+        MULTIQC_FILTERED_BAMS(
+            filtered_bam_stats
+                .map { sid, stats, flagstats -> [stats, flagstats] }
+                .flatten()
+                .collect(),
+            Channel.value('filtered_bams')
+        )
+
         // Collect filtered BAMs and BAIs
         bam_bai_split = filtered_bams
             .toList()
