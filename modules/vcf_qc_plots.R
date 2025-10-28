@@ -98,7 +98,7 @@ snp_summary_stats_plot  <- locus_missingness_plot +
   theme_classic(base_size = 16) +
   theme(panel.background = element_rect(colour = 'black')) 
 ggsave(paste0(output_prefix, '_summary_plots.png'),
-       plot = snp_summary_stats,
+       plot = snp_summary_stats_plot,
        height = 10,
        width = 10)
 
