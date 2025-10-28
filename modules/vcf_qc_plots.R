@@ -14,10 +14,14 @@ cat("Output prefix:", output_prefix, "\n")
 
 #### Libraries ####
 library(adegenet)
-library(tidyverse)
 library(vcfR)
 library(patchwork)
 library(ggrepel)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(tibble)
+library(stringr)
 
 #### Data ####
 raw_vcf <- read.vcfR(vcf_file)
