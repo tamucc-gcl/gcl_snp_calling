@@ -98,8 +98,9 @@ workflow {
         ploidy_map_ch = Channel.value(file('NO_FILE'))
     }
     
-    // Process original BAM files for QC
-    raw_bam_pairs_ch = Channel.fromPath(params.bams, checkIfExists: true)
+    // CREATE A SINGLE BAM CHANNEL AND BRANCH IT
+    // This is the key fix - create the channel once and branch for different uses
+    all_bams_ch = Channel.fromPath(params.bams, checkIfExists: true)
         .toSortedList()
         .flatMap { bams -> bams }
         .map { bam ->
@@ -109,9 +110,13 @@ workflow {
             }
             return tuple(bam.simpleName, bam, bai)
         }
+        .branch {
+            forStats: true  // Send all to stats
+            forFilter: true  // Also send all to filter/freebayes
+        }
     
-    // Run samtools stats on raw BAMs
-    raw_bam_stats = SAMTOOLS_STATS_RAW(raw_bam_pairs_ch)
+    // Use the forStats branch for SAMTOOLS_STATS_RAW
+    raw_bam_stats = SAMTOOLS_STATS_RAW(all_bams_ch.forStats)
     
     // Run MultiQC on raw BAM stats
     MULTIQC_RAW_BAMS(
@@ -122,24 +127,16 @@ workflow {
         Channel.value('raw_bams')
     )
 
-    // Process BAM files - either filter them or use them directly
+    // Process BAM files - use the forFilter branch
     if (params.bam_filter_config) {
-        // Filter BAMs in parallel
-        bam_pairs_ch = Channel.fromPath(params.bams, checkIfExists: true)
-            .toSortedList()
-            .flatMap { bams -> bams }
-            .map { bam ->
-                def bai = file("${bam}.bai")
-                if (!bai.exists()) {
-                    error "BAM index file not found: ${bai}. Please run 'samtools index ${bam}'"
-                }
-                return tuple(bam, bai)
-            }
+        // Convert the forFilter branch to the format needed for FILTER_BAMS
+        bam_pairs_for_filter = all_bams_ch.forFilter
+            .map { sid, bam, bai -> tuple(bam, bai) }
         
         // Run filtering on each BAM file
         filtered_bams = FILTER_BAMS(
-            bam_pairs_ch.map { it[0] },  // just the BAM
-            bam_pairs_ch.map { it[1] },  // just the BAI
+            bam_pairs_for_filter.map { it[0] },  // just the BAM
+            bam_pairs_for_filter.map { it[1] },  // just the BAI
             bam_filter_config_ch
         )
         
@@ -170,17 +167,9 @@ workflow {
         bam_files = bam_bai_split.bams
         bai_files = bam_bai_split.bais
     } else {
-        // Use original BAMs without filtering
-        bam_bai_split = Channel.fromPath(params.bams, checkIfExists: true)
-            .toSortedList()
-            .flatMap { bams -> bams }
-            .map { bam ->
-                def bai = file("${bam}.bai")
-                if (!bai.exists()) {
-                    error "BAM index file not found: ${bai}. Please run 'samtools index ${bam}'"
-                }
-                return tuple(bam, bai)
-            }
+        // Use original BAMs without filtering - convert from the forFilter branch
+        bam_bai_split = all_bams_ch.forFilter
+            .map { sid, bam, bai -> tuple(bam, bai) }
             .toList()
             .multiMap { pairs ->
                 bams: pairs.collect { it[0] }
