@@ -90,16 +90,46 @@ meanDepth_plot <- depth_data %>%
   labs(x = 'Mean Sequencing Depth',
        y = 'Number of Loci')
 
+distribution_shared_loci <- depth_data %>%
+  is.na %>%
+  `!` %>%
+  rowSums() %>%
+  tibble(number_individuals = .) %>%
+  count(number_individuals) %>%
+  ggplot(aes(x = number_individuals, y = n)) +
+  geom_col() +
+  scale_x_continuous(labels = scales::comma_format(),
+                     limits = c(0, ncol(depth_data))) +
+  scale_y_continuous(labels = scales::comma_format()) +
+  labs(x = 'Number of Samples with locus',
+       y = 'Number of Loci')
+
+sample_n_loci_plot <- depth_data %>%
+  is.na %>%
+  `!` %>%
+  colSums() %>%
+  enframe(name = 'sample_id',
+          value = 'number_loci') %>%
+  mutate(sample_id = fct_reorder(sample_id, number_loci)) %>%
+  ggplot(aes(x = number_loci, y = sample_id)) +
+  geom_col() +
+  scale_x_continuous(labels = scales::comma_format()) +
+  labs(x = 'Number of Loci',
+       y = NULL)
+
 snp_summary_stats_plot  <- locus_missingness_plot + 
   sample_missingness_plot +
   depth_plot +
   meanDepth_plot + 
+  distribution_shared_loci +
+  sample_n_loci_plot +
+  plot_layout(ncol = 2) +
   plot_annotation(title = 'Raw SNP Summary Plots') &
   theme_classic(base_size = 16) +
   theme(panel.background = element_rect(colour = 'black')) 
 ggsave(paste0(output_prefix, '_summary_plots.png'),
        plot = snp_summary_stats_plot,
-       height = 10,
+       height = 15,
        width = 10)
 
 #### PCA ####
