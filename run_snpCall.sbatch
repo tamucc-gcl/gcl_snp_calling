@@ -47,5 +47,5 @@ nextflow run gcl_snp_calling/main.nf \
     --bam_filter_config ${bam_filter_parameters} \
     --num_chunks ${nChunk} \
     ${PLOIDY_MAP_PARAM} \
-    --output_dir "data/snps" \
+    --output_dir "results" \
     --output_vcf "raw_variants.vcf.gz"
