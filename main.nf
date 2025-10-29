@@ -98,9 +98,9 @@ workflow {
         ploidy_map_ch = Channel.value(file('NO_FILE'))
     }
     
-    // CREATE A SINGLE BAM CHANNEL AND SPLIT IT PROPERLY
-    // This ensures consistent ordering and allows parallel execution
-    Channel.fromPath(params.bams, checkIfExists: true)
+    // Create BAM channel once and collect to list for reuse
+    // This creates a value channel that can be used multiple times
+    all_bam_tuples = Channel.fromPath(params.bams, checkIfExists: true)
         .toSortedList()  // Ensure consistent ordering
         .flatMap { bams -> bams }
         .map { bam ->
@@ -110,10 +110,10 @@ workflow {
             }
             return tuple(bam.simpleName, bam, bai)
         }
-        .into { raw_bam_pairs_ch; bam_pairs_for_filter_ch }  // Split into two channels
+        .toList()  // Collect all to a list - creates a value channel
     
-    // Run samtools stats on raw BAMs (uses first channel)
-    raw_bam_stats = SAMTOOLS_STATS_RAW(raw_bam_pairs_ch)
+    // Run samtools stats on raw BAMs - use flatMap to emit each tuple
+    raw_bam_stats = SAMTOOLS_STATS_RAW(all_bam_tuples.flatMap { it })
     
     // Run MultiQC on raw BAM stats
     MULTIQC_RAW_BAMS(
@@ -124,10 +124,12 @@ workflow {
         Channel.value('raw_bams')
     )
 
-    // Process BAM files for filtering or direct use (uses second channel)
+    // Process BAM files for filtering or direct use
     if (params.bam_filter_config) {
-        // Convert channel for filtering
-        bams_for_filter = bam_pairs_for_filter_ch.map { sid, bam, bai -> tuple(bam, bai) }
+        // Convert tuples for filtering - use flatMap to emit each tuple
+        bams_for_filter = all_bam_tuples
+            .flatMap { it }
+            .map { sid, bam, bai -> tuple(bam, bai) }
         
         // Run filtering on each BAM file
         filtered_bams = FILTER_BAMS(
@@ -153,15 +155,14 @@ workflow {
         )
 
         // Collect all filtered BAMs into lists for FreeBayes
-        // IMPORTANT: Use collect() to ensure all files are available
         bam_files_ch = filtered_bams.map { bam, bai -> bam }.collect()
         bai_files_ch = filtered_bams.map { bam, bai -> bai }.collect()
         
     } else {
         // Use original BAMs without filtering
-        // IMPORTANT: Use collect() to ensure all files are available
-        bam_files_ch = bam_pairs_for_filter_ch.map { sid, bam, bai -> bam }.collect()
-        bai_files_ch = bam_pairs_for_filter_ch.map { sid, bam, bai -> bai }.collect()
+        // Extract just the BAM and BAI files from the tuples
+        bam_files_ch = all_bam_tuples.map { tuples -> tuples.collect { it[1] } }
+        bai_files_ch = all_bam_tuples.map { tuples -> tuples.collect { it[2] } }
     }
     
     // Config file
@@ -188,13 +189,12 @@ workflow {
         .filter { it != null }
     
     // Step 3: For each chunk, run freebayes with ALL BAM files
-    // Use combine to ensure each chunk gets all BAM files
     vcf_chunks = FREEBAYES_CHUNK(
         chunk_ch,
         reference_ch,
         reference_fai_ch,
-        bam_files_ch,  // This is now a value channel with all BAMs
-        bai_files_ch,  // This is now a value channel with all BAIs
+        bam_files_ch,  // Value channel with all BAMs
+        bai_files_ch,  // Value channel with all BAIs
         config_ch,
         ploidy_map_ch
     )
