@@ -22,6 +22,7 @@ library(dplyr)
 library(tidyr)
 library(tibble)
 library(stringr)
+library(forcats)
 
 #### Data ####
 raw_vcf <- read.vcfR(vcf_file)
