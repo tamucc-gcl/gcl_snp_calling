@@ -98,10 +98,10 @@ workflow {
         ploidy_map_ch = Channel.value(file('NO_FILE'))
     }
     
-    // CREATE A SINGLE BAM CHANNEL AND BRANCH IT
-    // This is the key fix - create the channel once and branch for different uses
-    all_bams_ch = Channel.fromPath(params.bams, checkIfExists: true)
-        .toSortedList()
+    // CREATE A SINGLE BAM CHANNEL AND SPLIT IT PROPERLY
+    // This ensures consistent ordering and allows parallel execution
+    Channel.fromPath(params.bams, checkIfExists: true)
+        .toSortedList()  // Ensure consistent ordering
         .flatMap { bams -> bams }
         .map { bam ->
             def bai = file("${bam}.bai")
@@ -110,13 +110,10 @@ workflow {
             }
             return tuple(bam.simpleName, bam, bai)
         }
-        .branch {
-            forStats: true  // Send all to stats
-            forFilter: true  // Also send all to filter/freebayes
-        }
+        .into { raw_bam_pairs_ch; bam_pairs_for_filter_ch }  // Split into two channels
     
-    // Use the forStats branch for SAMTOOLS_STATS_RAW
-    raw_bam_stats = SAMTOOLS_STATS_RAW(all_bams_ch.forStats)
+    // Run samtools stats on raw BAMs (uses first channel)
+    raw_bam_stats = SAMTOOLS_STATS_RAW(raw_bam_pairs_ch)
     
     // Run MultiQC on raw BAM stats
     MULTIQC_RAW_BAMS(
@@ -127,16 +124,15 @@ workflow {
         Channel.value('raw_bams')
     )
 
-    // Process BAM files - use the forFilter branch
+    // Process BAM files for filtering or direct use (uses second channel)
     if (params.bam_filter_config) {
-        // Convert the forFilter branch to the format needed for FILTER_BAMS
-        bam_pairs_for_filter = all_bams_ch.forFilter
-            .map { sid, bam, bai -> tuple(bam, bai) }
+        // Convert channel for filtering
+        bams_for_filter = bam_pairs_for_filter_ch.map { sid, bam, bai -> tuple(bam, bai) }
         
         // Run filtering on each BAM file
         filtered_bams = FILTER_BAMS(
-            bam_pairs_for_filter.map { it[0] },  // just the BAM
-            bam_pairs_for_filter.map { it[1] },  // just the BAI
+            bams_for_filter.map { it[0] },  // just the BAM
+            bams_for_filter.map { it[1] },  // just the BAI
             bam_filter_config_ch
         )
         
@@ -156,28 +152,16 @@ workflow {
             Channel.value('filtered_bams')
         )
 
-        // Collect filtered BAMs and BAIs
-        bam_bai_split = filtered_bams
-            .toList()
-            .multiMap { pairs ->
-                bams: pairs.collect { it[0] }
-                bais: pairs.collect { it[1] }
-            }
+        // Collect all filtered BAMs into lists for FreeBayes
+        // IMPORTANT: Use collect() to ensure all files are available
+        bam_files_ch = filtered_bams.map { bam, bai -> bam }.collect()
+        bai_files_ch = filtered_bams.map { bam, bai -> bai }.collect()
         
-        bam_files = bam_bai_split.bams
-        bai_files = bam_bai_split.bais
     } else {
-        // Use original BAMs without filtering - convert from the forFilter branch
-        bam_bai_split = all_bams_ch.forFilter
-            .map { sid, bam, bai -> tuple(bam, bai) }
-            .toList()
-            .multiMap { pairs ->
-                bams: pairs.collect { it[0] }
-                bais: pairs.collect { it[1] }
-            }
-        
-        bam_files = bam_bai_split.bams
-        bai_files = bam_bai_split.bais
+        // Use original BAMs without filtering
+        // IMPORTANT: Use collect() to ensure all files are available
+        bam_files_ch = bam_pairs_for_filter_ch.map { sid, bam, bai -> bam }.collect()
+        bai_files_ch = bam_pairs_for_filter_ch.map { sid, bam, bai -> bai }.collect()
     }
     
     // Config file
@@ -187,7 +171,7 @@ workflow {
         config_ch = Channel.value([])
     }
     
-    // Step 1: Create genome chunks (runs in parallel with BAM filtering)
+    // Step 1: Create genome chunks (runs in parallel with BAM processing)
     chunks = CREATE_CHUNKS(reference_ch, params.num_chunks)
     chunk_regions = chunks[1]
     
@@ -203,15 +187,16 @@ workflow {
         }
         .filter { it != null }
     
-    // Step 3: For each chunk, run freebayes with ALL inputs including ploidy map
+    // Step 3: For each chunk, run freebayes with ALL BAM files
+    // Use combine to ensure each chunk gets all BAM files
     vcf_chunks = FREEBAYES_CHUNK(
         chunk_ch,
         reference_ch,
         reference_fai_ch,
-        bam_files,
-        bai_files,
+        bam_files_ch,  // This is now a value channel with all BAMs
+        bai_files_ch,  // This is now a value channel with all BAIs
         config_ch,
-        ploidy_map_ch  // NEW: Pass ploidy map to freebayes
+        ploidy_map_ch
     )
     
     // Step 4: Combine VCFs
@@ -235,6 +220,12 @@ workflow.onComplete {
         log.info ""
         log.info "Results are available in: ${params.output_dir}/"
         log.info "Final VCF file: ${params.output_dir}/${params.output_vcf}"
+        log.info ""
+        log.info "QC Reports:"
+        log.info "- Raw BAMs MultiQC: ${params.output_dir}/multiqc_reports/multiqc_raw_bams.html"
+        if (params.bam_filter_config) {
+            log.info "- Filtered BAMs MultiQC: ${params.output_dir}/multiqc_reports/multiqc_filtered_bams.html"
+        }
         log.info ""
         log.info "Pipeline used exactly ${params.num_chunks} chunks with complete genome coverage"
         if (params.ploidy_map) {
