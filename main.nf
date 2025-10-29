@@ -100,12 +100,14 @@ workflow {
     
     // Process original BAM files for QC
     raw_bam_pairs_ch = Channel.fromPath(params.bams, checkIfExists: true)
+        .toSortedList()
+        .flatMap { bams -> bams }
         .map { bam ->
             def bai = file("${bam}.bai")
             if (!bai.exists()) {
                 error "BAM index file not found: ${bai}. Please run 'samtools index ${bam}'"
             }
-            return tuple(bam.baseName, bam, bai)
+            return tuple(bam.simpleName, bam, bai)
         }
     
     // Run samtools stats on raw BAMs
@@ -124,6 +126,8 @@ workflow {
     if (params.bam_filter_config) {
         // Filter BAMs in parallel
         bam_pairs_ch = Channel.fromPath(params.bams, checkIfExists: true)
+            .toSortedList()
+            .flatMap { bams -> bams }
             .map { bam ->
                 def bai = file("${bam}.bai")
                 if (!bai.exists()) {
@@ -142,7 +146,7 @@ workflow {
         // Run samtools stats on filtered BAMs
         filtered_bam_stats = SAMTOOLS_STATS_FILTERED(
             filtered_bams.map { bam, bai -> 
-                tuple(bam.baseName.replace('.filtered', ''), bam, bai)
+                tuple(bam.simpleName.replace('.filtered', ''), bam, bai)
             }
         )
         
@@ -168,6 +172,8 @@ workflow {
     } else {
         // Use original BAMs without filtering
         bam_bai_split = Channel.fromPath(params.bams, checkIfExists: true)
+            .toSortedList()
+            .flatMap { bams -> bams }
             .map { bam ->
                 def bai = file("${bam}.bai")
                 if (!bai.exists()) {
