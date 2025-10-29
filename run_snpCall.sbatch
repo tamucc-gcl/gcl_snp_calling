@@ -48,4 +48,4 @@ nextflow run gcl_snp_calling/main.nf \
     --num_chunks ${nChunk} \
     ${PLOIDY_MAP_PARAM} \
     --output_dir "data/snps" \
-    --output_vcf "all_samples.vcf.gz"
+    --output_vcf "raw_variants.vcf.gz"

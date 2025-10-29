@@ -18,7 +18,7 @@ params.bams = "*.bam"
 params.reference = "reference.fasta"
 params.num_chunks = 10
 params.output_dir = "results"
-params.output_vcf = "combined_variants.vcf.gz"
+params.output_vcf = "raw_variants.vcf.gz"
 params.freebayes_config = null
 params.bam_filter_config = null
 params.ploidy_map = null  // NEW PARAMETER for per-BAM ploidy
@@ -40,7 +40,7 @@ def helpMessage() {
     Optional parameters:
     --num_chunks        Number of chunks to split genome into (default: 10)
     --output_dir        Output directory (default: "results")
-    --output_vcf        Name of final combined VCF file (default: "combined_variants.vcf.gz")
+    --output_vcf        Name of final combined VCF file (default: "raw_variants.vcf.gz")
     --freebayes_config  Path to JSON file containing freebayes parameters (optional)
     --bam_filter_config Path to JSON file containing BAM filter parameters (optional)
     --ploidy_map        Path to file mapping BAM files to ploidy values (optional)

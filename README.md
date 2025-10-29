@@ -83,7 +83,7 @@ nextflow run gcl_snp_calling/main.nf \
     --bam_filter_config {bam_filter_parameters} \
     --num_chunks {nChunk} \
     --output_dir "data/snps" \
-    --output_vcf "all_samples.vcf.gz"
+    --output_vcf "raw_variants.vcf.gz"
 ```
 3. Or Run in SLURM `sbatch run_snpCall.sbatch {freebayes_parameters.json} {bam_filter_parameters} 25`
 
