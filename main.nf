@@ -98,8 +98,8 @@ workflow {
         config_ch = Channel.value([])
     }
     
-    // Create BAM channel - Keep as queue channel for better caching
-    bam_channel = Channel.fromPath(params.bams, checkIfExists: true)
+    // Create BAM channel for stats - use direct channel without complex transformations
+    bam_channel_for_stats = Channel.fromPath(params.bams, checkIfExists: true)
         .map { bam ->
             def bai = file("${bam}.bai")
             if (!bai.exists()) {
@@ -108,14 +108,8 @@ workflow {
             return tuple(bam.simpleName, bam, bai)
         }
     
-    // Branch the channel for different uses to maintain proper caching
-    bam_channel.branch {
-        stats: true
-        filter: true
-    }.set { bam_branches }
-    
     // Run samtools stats on raw BAMs
-    raw_bam_stats = SAMTOOLS_STATS_RAW(bam_branches.stats)
+    raw_bam_stats = SAMTOOLS_STATS_RAW(bam_channel_for_stats)
     
     // Collect stats for MultiQC
     raw_stats_files = raw_bam_stats
@@ -131,10 +125,17 @@ workflow {
     
     // Process BAM files for filtering or direct use
     if (params.bam_filter_config) {
+        // Create separate channel for filtering (can't reuse the stats channel)
+        bam_channel_for_filter = Channel.fromPath(params.bams, checkIfExists: true)
+            .map { bam ->
+                def bai = file("${bam}.bai")
+                return tuple(bam, bai)
+            }
+        
         // Filter BAMs
         filtered_bams = FILTER_BAMS(
-            bam_branches.filter.map { sid, bam, bai -> bam },
-            bam_branches.filter.map { sid, bam, bai -> bai },
+            bam_channel_for_filter.map { it[0] },
+            bam_channel_for_filter.map { it[1] },
             bam_filter_config_ch
         )
         
@@ -162,13 +163,15 @@ workflow {
         bai_files_ch = filtered_bams.map { bam, bai -> bai }.collect()
         
     } else {
-        // Use original BAMs without filtering
-        bam_files_ch = bam_branches.filter
-            .map { sid, bam, bai -> bam }
-            .collect()
-        bai_files_ch = bam_branches.filter
-            .map { sid, bam, bai -> bai }
-            .collect()
+        // Use original BAMs without filtering - create fresh channel for collection
+        bam_channel_for_freebayes = Channel.fromPath(params.bams, checkIfExists: true)
+            .map { bam ->
+                def bai = file("${bam}.bai")
+                return tuple(bam, bai)
+            }
+        
+        bam_files_ch = bam_channel_for_freebayes.map { bam, bai -> bam }.collect()
+        bai_files_ch = bam_channel_for_freebayes.map { bam, bai -> bai }.collect()
     }
     
     // Step 1: Create genome chunks
