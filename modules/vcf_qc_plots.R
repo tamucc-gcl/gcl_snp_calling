@@ -147,7 +147,7 @@ raw_snp_pca <- raw_pca_scores %>%
   theme(panel.background = element_rect(colour = 'black')) 
 
 ggsave(paste0(output_prefix, '_pca.png'),
-       plot = snp_pca,
+       plot = raw_snp_pca,
        height = 5,
        width = 5)
 
