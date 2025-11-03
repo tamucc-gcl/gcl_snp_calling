@@ -206,7 +206,7 @@ workflow {
     COMBINE_VCFS(all_vcfs, params.output_vcf)
     
     // Step 5: Summarize final VCF
-    SUMMARIZE_VCFS(COMBINE_VCFS.out.vcf)
+    SUMMARIZE_VCFS(COMBINE_VCFS.out.vcf, ploidy_map_ch)
 }
 
 workflow.onComplete {

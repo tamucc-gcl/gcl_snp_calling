@@ -8,6 +8,8 @@ if (length(args) < 2) {
 
 vcf_file <- args[1]
 output_prefix <- args[2]
+ploidy_map_file <- if (length(args) >= 3 && args[3] != "NO_PLOIDY_MAP") args[3] else NULL
+
 
 cat("Processing VCF:", vcf_file, "\n")
 cat("Output prefix:", output_prefix, "\n")
@@ -26,6 +28,26 @@ library(forcats)
 
 #### Data ####
 raw_vcf <- read.vcfR(vcf_file)
+
+if (!is.null(ploidy_map_file)) {
+  cat("Ploidy map file:", ploidy_map_file, "\n")
+  
+  # Read the ploidy map
+  ploidy_map <- read.table(ploidy_map_file, 
+                           header = FALSE, 
+                           col.names = c("sample", "ploidy"),
+                           stringsAsFactors = FALSE,
+                           comment.char = "#")
+  
+  cat("Loaded ploidy information for", nrow(ploidy_map), "samples\n")
+  
+  # You can now use ploidy_map throughout your R script
+  # For example, you might want to add annotations to plots
+  # or perform ploidy-aware analyses
+} else {
+  cat("No ploidy map provided\n")
+  ploidy_map <- NULL
+}
 
 #### QC Plots ####
 depth_data <- extract.gt(raw_vcf, 
@@ -73,7 +95,7 @@ depth_plot <- depth_data %>%
                      labels = scales::comma_format(), 
                      guide = guide_axis_logticks()) +
   labs(x = 'Sequencing Depth',
-       y = 'Number of Sites')
+       y = 'Number of Genotypes')
 
 
 meanDepth_plot <- depth_data %>%
@@ -134,12 +156,6 @@ ggsave(paste0(output_prefix, '_summary_plots.png'),
        width = 10)
 
 #### PCA ####
-raw_genlight <- vcfR2genlight(raw_vcf)
-pca_out <- glPca(raw_genlight,
-                 nf = 2, 
-                 loadings = FALSE)
-
-pct_var <- scales::percent(pca_out$eig / sum(pca_out$eig), accuracy = 0.1)
 
 #Identify outliers (Mahalanobis or Robust Mahalanobis distance (MCD estimator))
 flag_outliers <- function(data, pca, alpha = 0.975){
@@ -156,22 +172,48 @@ flag_outliers <- function(data, pca, alpha = 0.975){
                                df = ncol(pca$scores)),
          robust_outlier_score = md_robust,
          robust_outlier = md_robust > qchisq(alpha, 
-                                      df = ncol(pca$scores)))
+                                             df = ncol(pca$scores)))
 }
+
+if(is.null(ploidy_map)){
+  raw_genlight <- vcfR2genlight(raw_vcf)
+
+} else {
+  raw_genlight <- vcfR2genind(raw_vcf,
+                            ploidy = ploidy_map$ploidy) %>%
+    dartR::gi2gl()
+}
+
+pca_out <- glPca(raw_genlight,
+                 nf = 2, 
+                 loadings = FALSE)
+
+pct_var <- scales::percent(pca_out$eig / sum(pca_out$eig), accuracy = 0.1)
+
 
 raw_pca_scores <- pca_out$scores %>%
   as_tibble(rownames = 'sample_id') %>%
   flag_outliers(pca_out)
 
+
 raw_snp_pca <- raw_pca_scores %>%
   ggplot(aes(x = PC1, y = PC2)) +
   geom_hline(yintercept = 0, linetype = 'dashed') +
-  geom_vline(xintercept = 0, linetype = 'dashed') +
-  geom_point() +
-  geom_text_repel(data = . %>% filter(outlier),
-            aes(label = sample_id),
-            hjust = 'inward',
-            vjust = 'inward') +
+  geom_vline(xintercept = 0, linetype = 'dashed')
+
+if(!is.null(ploidy_map) & nrow(ploidy_map) < 10){
+  raw_snp_pca <- raw_snp_pca +
+    geom_text(aes(label = sample_id)) 
+} else {
+  raw_snp_pca <- raw_snp_pca +
+    geom_point() +
+    geom_text_repel(data = . %>% filter(outlier),
+                    aes(label = sample_id),
+                    hjust = 'inward',
+                    vjust = 'inward')
+}
+
+raw_snp_pca <- raw_snp_pca +
   labs(x = str_c('PC1 (', pct_var[1], ")"),
        y = str_c('PC1 (', pct_var[2], ")")) +
   theme_classic(base_size = 16) +
