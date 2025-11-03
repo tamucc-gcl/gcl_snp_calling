@@ -175,13 +175,33 @@ flag_outliers <- function(data, pca, alpha = 0.975){
                                              df = ncol(pca$scores)))
 }
 
+genind2genlight <- function(gi){
+  locna <- gi@loc.n.all
+  ccc <- 1
+  for (i in 2:length(locna)) {
+    if (locna[i - 1] == 1) {
+      ccc[i] <- ccc[i - 1] + 1
+    }
+    else {
+      ccc[i] <- ccc[i - 1] + 2
+    }
+  }
+  
+  new("genlight", gi@tab[, ccc], pop = pop(gi), other = gi@other, 
+      ploidy = ploidy(gi), loc.names = locNames(gi), ind.names = indNames(gi))
+}
+
+
 if(is.null(ploidy_map)){
   raw_genlight <- vcfR2genlight(raw_vcf)
 
 } else {
-  raw_genlight <- vcfR2genind(raw_vcf,
-                            ploidy = ploidy_map$ploidy) %>%
-    dartR::gi2gl()
+  raw_genlight <- ploidy_map %>%
+    arrange(match(sample, colnames(raw_vcf@gt)[-1])) %>%
+    pull(ploidy) %>%
+    vcfR2genind(raw_vcf,
+                ploidy = .) %>%
+    genind2genlight()
 }
 
 pca_out <- glPca(raw_genlight,
