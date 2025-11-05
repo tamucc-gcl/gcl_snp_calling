@@ -22,6 +22,7 @@ params.output_vcf = "raw_variants.vcf.gz"
 params.freebayes_config = null
 params.bam_filter_config = null
 params.ploidy_map = null
+params.skip_qc = false  // New parameter to skip QC if needed
 
 // Help message
 def helpMessage() {
@@ -44,6 +45,7 @@ def helpMessage() {
     --freebayes_config  Path to JSON file containing freebayes parameters (optional)
     --bam_filter_config Path to JSON file containing BAM filter parameters (optional)
     --ploidy_map        Path to file mapping BAM files to ploidy values (optional)
+    --skip_qc           Skip QC stats and MultiQC (default: false)
     
     """.stripIndent()
 }
@@ -73,102 +75,78 @@ workflow {
     log.info "Freebayes config:  ${params.freebayes_config ?: 'Using default parameters'}"
     log.info "BAM filter config: ${params.bam_filter_config ?: 'Using default parameters'}"
     log.info "Ploidy map:        ${params.ploidy_map ?: 'Using global ploidy from config or default'}"
+    log.info "Skip QC:           ${params.skip_qc}"
     log.info "================================================================"
     
-    // ===== CRITICAL CHANGE: Create channels once as value channels =====
-    // Create reference channels once
+    // Create value channels for reference files
     reference_ch = Channel.fromPath(params.reference, checkIfExists: true).first()
     reference_fai_ch = Channel.fromPath("${params.reference}.fai", checkIfExists: true).first()
     
-    // Create config channels once
-    bam_filter_config_ch = params.bam_filter_config 
-        ? Channel.fromPath(params.bam_filter_config, checkIfExists: true).first()
-        : Channel.value(file('NO_FILE'))
-    
-    ploidy_map_ch = params.ploidy_map 
-        ? Channel.fromPath(params.ploidy_map, checkIfExists: true).first()
-        : Channel.value(file('NO_FILE'))
-    
-    config_ch = params.freebayes_config 
-        ? Channel.fromPath(params.freebayes_config, checkIfExists: true).first()
-        : Channel.value([])
-    
-    // ===== CRITICAL: Create master BAM channel once and sort it =====
-    // This ensures deterministic ordering across runs
-    master_bam_channel = Channel.fromPath(params.bams, checkIfExists: true)
-        .map { bam ->
-            def bai = file("${bam}.bai")
-            if (!bai.exists()) {
-                error "BAM index file not found: ${bai}. Please run 'samtools index ${bam}'"
-            }
-            return tuple(bam.simpleName, bam, bai)
-        }
-        .toSortedList { a, b -> a[0] <=> b[0] }  // Sort by sample name for deterministic ordering
-        .flatMap { it }  // Convert back to individual emissions
-    
-    // ===== Create branches from the master channel =====
-    // Use multiMap to create multiple branches from the same source
-    bam_branches = master_bam_channel.multiMap { sample_id, bam, bai ->
-        for_stats: tuple(sample_id, bam, bai)
-        for_processing: tuple(bam, bai)
+    // Config channels
+    if (params.bam_filter_config) {
+        bam_filter_config_ch = Channel.fromPath(params.bam_filter_config, checkIfExists: true).first()
+    } else {
+        bam_filter_config_ch = Channel.value(file('NO_FILE'))
     }
     
-    // ===== QC on raw BAMs =====
-    raw_bam_stats = SAMTOOLS_STATS_RAW(bam_branches.for_stats)
+    if (params.ploidy_map) {
+        ploidy_map_ch = Channel.fromPath(params.ploidy_map, checkIfExists: true).first()
+    } else {
+        ploidy_map_ch = Channel.value(file('NO_FILE'))
+    }
     
-    raw_stats_files = raw_bam_stats
-        .map { sid, stats, flagstats -> [stats, flagstats] }
-        .flatten()
-        .collect()
+    if (params.freebayes_config) {
+        config_ch = Channel.fromPath(params.freebayes_config, checkIfExists: true).first()
+    } else {
+        config_ch = Channel.value([])
+    }
     
-    MULTIQC_RAW_BAMS(
-        raw_stats_files,
-        Channel.value('raw_bams')
-    )
+    // ===== MAIN VARIANT CALLING WORKFLOW =====
+    // This is kept separate from QC to maintain caching
     
-    // ===== Process BAMs for variant calling =====
+    // Step 1: Create genome chunks (independent of BAMs)
+    chunks = CREATE_CHUNKS(reference_ch, params.num_chunks)
+    chunk_regions = chunks[1]
+    
+    // Step 2: Process BAM files for variant calling
     if (params.bam_filter_config) {
+        // Create channel for filtering
+        bam_channel = Channel.fromPath(params.bams, checkIfExists: true)
+            .map { bam ->
+                def bai = file("${bam}.bai")
+                if (!bai.exists()) {
+                    error "BAM index file not found: ${bai}. Please run 'samtools index ${bam}'"
+                }
+                return tuple(bam, bai)
+            }
+        
         // Filter BAMs
         filtered_bams = FILTER_BAMS(
-            bam_branches.for_processing.map { it[0] },  // just the BAM
-            bam_branches.for_processing.map { it[1] },  // just the BAI
+            bam_channel.map { it[0] },
+            bam_channel.map { it[1] },
             bam_filter_config_ch
         )
         
-        // Run stats on filtered BAMs
-        filtered_bam_stats = SAMTOOLS_STATS_FILTERED(
-            filtered_bams.map { bam, bai -> 
-                tuple(bam.simpleName.replace('.filtered', ''), bam, bai)
-            }
-        )
-        
-        filtered_stats_files = filtered_bam_stats
-            .map { sid, stats, flagstats -> [stats, flagstats] }
-            .flatten()
-            .collect()
-        
-        MULTIQC_FILTERED_BAMS(
-            filtered_stats_files,
-            Channel.value('filtered_bams')
-        )
-        
-        // Collect filtered BAMs for FreeBayes
+        // Collect for FreeBayes
         bam_files_ch = filtered_bams.map { bam, bai -> bam }.collect()
         bai_files_ch = filtered_bams.map { bam, bai -> bai }.collect()
         
     } else {
         // Use original BAMs without filtering
-        // Collect directly from the for_processing branch
-        bam_files_ch = bam_branches.for_processing.map { bam, bai -> bam }.collect()
-        bai_files_ch = bam_branches.for_processing.map { bam, bai -> bai }.collect()
+        bam_channel = Channel.fromPath(params.bams, checkIfExists: true)
+            .map { bam ->
+                def bai = file("${bam}.bai")
+                if (!bai.exists()) {
+                    error "BAM index file not found: ${bai}. Please run 'samtools index ${bam}'"
+                }
+                return tuple(bam, bai)
+            }
+        
+        bam_files_ch = bam_channel.map { bam, bai -> bam }.collect()
+        bai_files_ch = bam_channel.map { bam, bai -> bai }.collect()
     }
     
-    // ===== Variant calling workflow =====
-    // Step 1: Create genome chunks
-    chunks = CREATE_CHUNKS(reference_ch, params.num_chunks)
-    chunk_regions = chunks[1]
-    
-    // Step 2: Parse chunks into individual emissions
+    // Step 3: Parse chunks into individual emissions
     chunk_ch = chunk_regions
         .splitText()
         .map { line ->
@@ -180,7 +158,7 @@ workflow {
         }
         .filter { it != null }
     
-    // Step 3: Run freebayes on each chunk
+    // Step 4: Run freebayes on each chunk
     vcf_chunks = FREEBAYES_CHUNK(
         chunk_ch,
         reference_ch,
@@ -191,12 +169,78 @@ workflow {
         ploidy_map_ch
     )
     
-    // Step 4: Combine VCFs
+    // Step 5: Combine VCFs
     all_vcfs = vcf_chunks.map { chunk_id, vcf -> vcf }.collect()
     COMBINE_VCFS(all_vcfs, params.output_vcf)
     
-    // Step 5: Summarize final VCF
-    SUMMARIZE_VCFS(COMBINE_VCFS.out.vcf, ploidy_map_ch)
+    // Step 6: Summarize final VCF
+    SUMMARIZE_VCFS(COMBINE_VCFS.out.vcf)
+    
+    // ===== QC WORKFLOW (INDEPENDENT) =====
+    // Run QC in parallel, not affecting the main pipeline
+    if (!params.skip_qc) {
+        
+        // Create separate channels for QC (independent of main workflow)
+        qc_bam_channel = Channel.fromPath(params.bams, checkIfExists: true)
+            .map { bam ->
+                def bai = file("${bam}.bai")
+                if (!bai.exists()) {
+                    error "BAM index file not found: ${bai}. Please run 'samtools index ${bam}'"
+                }
+                return tuple(bam.simpleName, bam, bai)
+            }
+        
+        // Run samtools stats on raw BAMs
+        raw_bam_stats = SAMTOOLS_STATS_RAW(qc_bam_channel)
+        
+        // Collect stats for MultiQC
+        raw_stats_files = raw_bam_stats
+            .map { sid, stats, flagstats -> [stats, flagstats] }
+            .flatten()
+            .collect()
+        
+        // Run MultiQC on raw BAM stats
+        MULTIQC_RAW_BAMS(
+            raw_stats_files,
+            Channel.value('raw_bams')
+        )
+        
+        // If filtering was done, also run QC on filtered BAMs
+        if (params.bam_filter_config) {
+            // Create another independent channel for filtered BAM QC
+            qc_filter_channel = Channel.fromPath(params.bams, checkIfExists: true)
+                .map { bam ->
+                    def bai = file("${bam}.bai")
+                    return tuple(bam, bai)
+                }
+            
+            // Filter BAMs independently for QC
+            filtered_bams_qc = FILTER_BAMS(
+                qc_filter_channel.map { it[0] },
+                qc_filter_channel.map { it[1] },
+                bam_filter_config_ch
+            )
+            
+            // Run samtools stats on filtered BAMs
+            filtered_bam_stats = SAMTOOLS_STATS_FILTERED(
+                filtered_bams_qc.map { bam, bai -> 
+                    tuple(bam.simpleName.replace('.filtered', ''), bam, bai)
+                }
+            )
+            
+            // Collect filtered stats for MultiQC
+            filtered_stats_files = filtered_bam_stats
+                .map { sid, stats, flagstats -> [stats, flagstats] }
+                .flatten()
+                .collect()
+            
+            // Run MultiQC on filtered BAM stats
+            MULTIQC_FILTERED_BAMS(
+                filtered_stats_files,
+                Channel.value('filtered_bams')
+            )
+        }
+    }
 }
 
 workflow.onComplete {
@@ -214,10 +258,12 @@ workflow.onComplete {
         log.info "Results are available in: ${params.output_dir}/"
         log.info "Final VCF file: ${params.output_dir}/${params.output_vcf}"
         log.info ""
-        log.info "QC Reports:"
-        log.info "- Raw BAMs MultiQC: ${params.output_dir}/multiqc_reports/multiqc_raw_bams.html"
-        if (params.bam_filter_config) {
-            log.info "- Filtered BAMs MultiQC: ${params.output_dir}/multiqc_reports/multiqc_filtered_bams.html"
+        if (!params.skip_qc) {
+            log.info "QC Reports:"
+            log.info "- Raw BAMs MultiQC: ${params.output_dir}/multiqc_reports/multiqc_raw_bams.html"
+            if (params.bam_filter_config) {
+                log.info "- Filtered BAMs MultiQC: ${params.output_dir}/multiqc_reports/multiqc_filtered_bams.html"
+            }
         }
         log.info ""
         log.info "Pipeline used exactly ${params.num_chunks} chunks with complete genome coverage"
