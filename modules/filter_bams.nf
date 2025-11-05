@@ -1,7 +1,7 @@
 // modules/filter_bams.nf - Filter BAM files based on configurable parameters
 
 process FILTER_BAMS {
-    tag "${bam.baseName}"
+    tag "${bam.simpleName}"
     
     input:
     path bam
@@ -9,7 +9,7 @@ process FILTER_BAMS {
     path filter_config
     
     output:
-    tuple path("${bam.baseName}.filtered.bam"), path("${bam.baseName}.filtered.bam.bai")
+    tuple path("${bam.simpleName}.filtered.bam"), path("${bam.simpleName}.filtered.bam.bai")
     
     script:
     def has_config = filter_config.name != 'NO_FILE'
@@ -176,35 +176,35 @@ PYTHON_SCRIPT
         samtools fixmate -@ ${task.cpus} -r temp_namesorted.bam temp_fixmate.bam
         
         # Sort back by coordinate
-        samtools sort -@ ${task.cpus} temp_fixmate.bam -o ${bam.baseName}.filtered.bam
+        samtools sort -@ ${task.cpus} temp_fixmate.bam -o ${bam.simpleName}.filtered.bam
         
         rm temp_namesorted.bam temp_fixmate.bam
     else
         # Just rename the file
-        mv temp_filtered.bam ${bam.baseName}.filtered.bam
+        mv temp_filtered.bam ${bam.simpleName}.filtered.bam
     fi
     
     # 2) Name-sort (required before fixmate)
-    samtools sort -@ ${task.cpus ?: 8} -n -o ${bam.baseName}.nsrt.bam ${bam.baseName}.filtered.bam
+    samtools sort -@ ${task.cpus ?: 8} -n -o ${bam.simpleName}.nsrt.bam ${bam.simpleName}.filtered.bam
 
     # 3) Fixmate (adds required ms/MC tags for paired-end)
-    samtools fixmate -@ ${task.cpus ?: 8} -m ${bam.baseName}.nsrt.bam ${bam.baseName}.fxmt.bam
+    samtools fixmate -@ ${task.cpus ?: 8} -m ${bam.simpleName}.nsrt.bam ${bam.simpleName}.fxmt.bam
 
     # 4) Coordinate-sort for markdup
-    samtools sort -@ ${task.cpus ?: 8} -o ${bam.baseName}.csrt.bam ${bam.baseName}.fxmt.bam
+    samtools sort -@ ${task.cpus ?: 8} -o ${bam.simpleName}.csrt.bam ${bam.simpleName}.fxmt.bam
 
     # 5) Mark duplicates (marks; use -r to remove)
-    samtools markdup -@ ${task.cpus ?: 8} ${bam.baseName}.csrt.bam ${bam.baseName}.bam
+    samtools markdup -@ ${task.cpus ?: 8} ${bam.simpleName}.csrt.bam ${bam.simpleName}.bam
 
     # Optional: clean up intermediates to save space
-    rm -f ${bam.baseName}.filtered.bam ${bam.baseName}.nsrt.bam ${bam.baseName}.fxmt.bam ${bam.baseName}.csrt.bam temp_filtered.bam
+    rm -f ${bam.simpleName}.filtered.bam ${bam.simpleName}.nsrt.bam ${bam.simpleName}.fxmt.bam ${bam.simpleName}.csrt.bam temp_filtered.bam
 
     # 6) Index final BAM
-    mv ${bam.baseName}.bam ${bam.baseName}.filtered.bam
-    samtools index -@ ${task.cpus ?: 8} ${bam.baseName}.filtered.bam
+    mv ${bam.simpleName}.bam ${bam.simpleName}.filtered.bam
+    samtools index -@ ${task.cpus ?: 8} ${bam.simpleName}.filtered.bam
     
     # REMOVED: Statistics that reference input BAM
     # This was breaking cache because it reads ${bam} again
-    echo "Filtering complete for ${bam.baseName}"
+    echo "Filtering complete for ${bam.simpleName}"
     """
 }
