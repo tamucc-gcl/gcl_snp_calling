@@ -3,6 +3,7 @@
 nextflow.enable.dsl = 2
 
 // Import modules
+/*
 include { CREATE_CHUNKS } from './modules/create_chunks'
 include { FILTER_BAMS } from './modules/filter_bams'
 include { FREEBAYES_CHUNK } from './modules/freebayes_chunk'
@@ -12,6 +13,75 @@ include { samtools_stats as SAMTOOLS_STATS_RAW } from './modules/samtools_stats'
 include { samtools_stats as SAMTOOLS_STATS_FILTERED } from './modules/samtools_stats'
 include { multiqc as MULTIQC_RAW_BAMS } from './modules/multiqc'
 include { multiqc as MULTIQC_FILTERED_BAMS } from './modules/multiqc'
+*/
+
+// ADD INLINE PROCESS DEFINITIONS
+process samtools_stats {
+    label 'samtools_stats'
+    tag "$sample_id"
+    
+    input:
+    tuple val(sample_id), path(bam), path(bam_index)
+    
+    output:
+    tuple val(sample_id), path("${sample_id}.stats"), path("${sample_id}.flagstats")
+    
+    script:
+    """
+    samtools stats -@ ${task.cpus ?: 4} ${bam} > ${sample_id}.stats
+    samtools flagstat -@ ${task.cpus ?: 4} ${bam} > ${sample_id}.flagstats
+    """
+}
+
+process multiqc {
+    label 'multiqc'
+    tag "${step_name}"
+    publishDir "${params.output_dir}/multiqc_reports", mode: 'copy', pattern: "*.html"
+    
+    input:
+    path(input_files)
+    val(step_name)
+    
+    output:
+    path("multiqc_${step_name}.html")
+    path("multiqc_${step_name}_general_stats.txt")
+    
+    script:
+    """
+    multiqc \
+        --title "MultiQC Report - ${step_name}" \
+        --filename multiqc_${step_name}.html \
+        --export \
+        --data-dir \
+        .
+    
+    DATA_DIR="multiqc_${step_name}_data"
+    
+    if [ -f "\$DATA_DIR/multiqc_general_stats.txt" ]; then
+        cp "\$DATA_DIR/multiqc_general_stats.txt" "multiqc_${step_name}_general_stats.txt"
+    else
+        touch "multiqc_${step_name}_general_stats.txt"
+    fi
+    """
+}
+
+process FILTER_BAMS {
+    label 'samtools_stats'
+    tag "${bam.simpleName}"
+    
+    input:
+    path(bam)
+    path(bai)
+    
+    output:
+    tuple path("${bam.simpleName}.filtered.bam"), path("${bam.simpleName}.filtered.bam.bai")
+    
+    script:
+    """
+    cp ${bam} ${bam.simpleName}.filtered.bam
+    cp ${bai} ${bam.simpleName}.filtered.bam.bai
+    """
+}
 
 // Parameters
 params.bams = "*.bam"
@@ -60,6 +130,8 @@ if (!params.bams || !params.reference) {
 }
 
 workflow {
+    log.info "Testing with inline processes"
+
     log.info "================================================================"
     log.info "Parallel Freebayes Variant Calling Pipeline"
     log.info "================================================================"
