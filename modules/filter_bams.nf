@@ -203,12 +203,8 @@ PYTHON_SCRIPT
     mv ${bam.baseName}.bam ${bam.baseName}.filtered.bam
     samtools index -@ ${task.cpus ?: 8} ${bam.baseName}.filtered.bam
     
-    # Print statistics
-    echo ""
-    echo "Filtering complete. Statistics:"
-    echo "Original BAM: \$(samtools view -c ${bam}) reads"
-    echo "Filtered BAM: \$(samtools view -c ${bam.baseName}.filtered.bam) reads"
-    echo "Reads removed: \$(( \$(samtools view -c ${bam}) - \$(samtools view -c ${bam.baseName}.filtered.bam) ))"
-    echo "Percentage kept: \$(awk -v orig=\$(samtools view -c ${bam}) -v filt=\$(samtools view -c ${bam.baseName}.filtered.bam) 'BEGIN {printf "%.2f%%\\n", (filt/orig)*100}')"
+    # REMOVED: Statistics that reference input BAM
+    # This was breaking cache because it reads ${bam} again
+    echo "Filtering complete for ${bam.baseName}"
     """
 }
