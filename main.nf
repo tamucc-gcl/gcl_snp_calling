@@ -102,51 +102,43 @@ workflow {
     }
     
     // ===== MAIN VARIANT CALLING WORKFLOW =====
-    // This is kept separate from QC to maintain caching
     
     // Step 1: Create genome chunks (independent of BAMs)
     chunks = CREATE_CHUNKS(reference_ch, params.num_chunks)
     chunk_regions = chunks[1]
     
-    // Step 2: Process BAM files for variant calling
-    if (params.bam_filter_config) {
-        // Create channel for filtering
-        bam_channel = Channel.fromPath(params.bams, checkIfExists: true)
-            .map { bam ->
-                def bai = file("${bam}.bai")
-                if (!bai.exists()) {
-                    error "BAM index file not found: ${bai}. Please run 'samtools index ${bam}'"
-                }
-                return tuple(bam, bai)
+    // Step 2: Process BAM files
+    bam_channel = Channel.fromPath(params.bams, checkIfExists: true)
+        .map { bam ->
+            def bai = file("${bam}.bai")
+            if (!bai.exists()) {
+                error "BAM index file not found: ${bai}. Please run 'samtools index ${bam}'"
             }
-        
-        // Filter BAMs
+            return tuple(bam, bai)
+        }
+    
+    // Step 3: Filter BAMs if config provided, otherwise use originals
+    if (params.bam_filter_config) {
+        // Filter BAMs once
         filtered_bams = FILTER_BAMS(
             bam_channel.map { it[0] },
             bam_channel.map { it[1] },
             bam_filter_config_ch
         )
         
-        // Collect for FreeBayes
-        bam_files_ch = filtered_bams.map { bam, bai -> bam }.collect()
-        bai_files_ch = filtered_bams.map { bam, bai -> bai }.collect()
+        // Use filtered BAMs for variant calling
+        bams_for_freebayes = filtered_bams
         
     } else {
-        // Use original BAMs without filtering
-        bam_channel = Channel.fromPath(params.bams, checkIfExists: true)
-            .map { bam ->
-                def bai = file("${bam}.bai")
-                if (!bai.exists()) {
-                    error "BAM index file not found: ${bai}. Please run 'samtools index ${bam}'"
-                }
-                return tuple(bam, bai)
-            }
-        
-        bam_files_ch = bam_channel.map { bam, bai -> bam }.collect()
-        bai_files_ch = bam_channel.map { bam, bai -> bai }.collect()
+        // Use original BAMs for variant calling
+        bams_for_freebayes = bam_channel
     }
     
-    // Step 3: Parse chunks into individual emissions
+    // Collect BAMs for FreeBayes
+    bam_files_ch = bams_for_freebayes.map { bam, bai -> bam }.collect()
+    bai_files_ch = bams_for_freebayes.map { bam, bai -> bai }.collect()
+    
+    // Step 4: Parse chunks into individual emissions
     chunk_ch = chunk_regions
         .splitText()
         .map { line ->
@@ -158,7 +150,7 @@ workflow {
         }
         .filter { it != null }
     
-    // Step 4: Run freebayes on each chunk
+    // Step 5: Run freebayes on each chunk
     vcf_chunks = FREEBAYES_CHUNK(
         chunk_ch,
         reference_ch,
@@ -169,19 +161,19 @@ workflow {
         ploidy_map_ch
     )
     
-    // Step 5: Combine VCFs
+    // Step 6: Combine VCFs
     all_vcfs = vcf_chunks.map { chunk_id, vcf -> vcf }.collect()
     COMBINE_VCFS(all_vcfs, params.output_vcf)
     
-    // Step 6: Summarize final VCF
+    // Step 7: Summarize final VCF (with ploidy_map_ch)
     SUMMARIZE_VCFS(COMBINE_VCFS.out.vcf, ploidy_map_ch)
     
     // ===== QC WORKFLOW (INDEPENDENT) =====
     // Run QC in parallel, not affecting the main pipeline
     if (!params.skip_qc) {
         
-        // Create separate channels for QC (independent of main workflow)
-        qc_bam_channel = Channel.fromPath(params.bams, checkIfExists: true)
+        // QC for raw BAMs (always run if QC enabled)
+        qc_raw_channel = Channel.fromPath(params.bams, checkIfExists: true)
             .map { bam ->
                 def bai = file("${bam}.bai")
                 if (!bai.exists()) {
@@ -191,7 +183,7 @@ workflow {
             }
         
         // Run samtools stats on raw BAMs
-        raw_bam_stats = SAMTOOLS_STATS_RAW(qc_bam_channel)
+        raw_bam_stats = SAMTOOLS_STATS_RAW(qc_raw_channel)
         
         // Collect stats for MultiQC
         raw_stats_files = raw_bam_stats
@@ -205,25 +197,12 @@ workflow {
             Channel.value('raw_bams')
         )
         
-        // If filtering was done, also run QC on filtered BAMs
+        // QC for filtered BAMs (only if filtering was done)
         if (params.bam_filter_config) {
-            // Create another independent channel for filtered BAM QC
-            qc_filter_channel = Channel.fromPath(params.bams, checkIfExists: true)
-                .map { bam ->
-                    def bai = file("${bam}.bai")
-                    return tuple(bam, bai)
-                }
-            
-            // Filter BAMs independently for QC
-            filtered_bams_qc = FILTER_BAMS(
-                qc_filter_channel.map { it[0] },
-                qc_filter_channel.map { it[1] },
-                bam_filter_config_ch
-            )
-            
-            // Run samtools stats on filtered BAMs
+            // Use the already filtered BAMs from the main workflow
+            // We need to duplicate the channel for independent QC processing
             filtered_bam_stats = SAMTOOLS_STATS_FILTERED(
-                filtered_bams_qc.map { bam, bai -> 
+                bams_for_freebayes.map { bam, bai -> 
                     tuple(bam.simpleName.replace('.filtered', ''), bam, bai)
                 }
             )
