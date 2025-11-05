@@ -41,7 +41,6 @@ fi
 nextflow run gcl_snp_calling/main.nf \
     -profile slurm \
     -resume \
-    --run_qc \
     --bams "./data/bam/*.bam" \
     --reference "./genome/genome.fa" \
     --freebayes_config ${freebayes_parameters} \
