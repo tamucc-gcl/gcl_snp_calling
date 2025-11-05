@@ -98,41 +98,29 @@ workflow {
         config_ch = Channel.value([])
     }
     
-    // CRITICAL FIX: Create BAM channel ONCE and make all needed copies
-    Channel.fromPath(params.bams, checkIfExists: true)
-        .map { bam ->
+    // ===== CRITICAL FIX: Use fromFilePairs like the working QC pipeline =====
+    Channel
+        .fromFilePairs(params.bams, size: 1, flat: true) { file ->
+            file.simpleName
+        }
+        .map { sample_id, bam ->
             def bai = file("${bam}.bai")
             if (!bai.exists()) {
                 error "BAM index file not found: ${bai}. Please run 'samtools index ${bam}'"
             }
-            return tuple(bam.simpleName, bam, bai)
+            return tuple(sample_id, bam, bai)
         }
-        .into { 
-            bam_channel_for_stats; 
-            bam_channel_for_filter_prep; 
-            bam_channel_for_freebayes_direct;
-            bam_channel_for_debug 
-        }
-    
-    // DEBUG: Log what files we're processing
-    bam_channel_for_debug
-        .toList()
-        .subscribe { list ->
-            log.info "DEBUG: Processing ${list.size()} BAM files:"
-            list.each { sid, bam, bai ->
-                log.info "  - ${sid}: ${bam.name}"
-            }
-        }
+        .set { raw_bam_pairs }
     
     // Run samtools stats on raw BAMs
-    raw_bam_stats = SAMTOOLS_STATS_RAW(bam_channel_for_stats)
+    raw_bam_stats = SAMTOOLS_STATS_RAW(raw_bam_pairs)
     
-    // CRITICAL FIX: Sort stats files before collecting for deterministic order
+    // Collect stats for MultiQC
     raw_stats_files = raw_bam_stats
         .map { sid, stats, flagstats -> [stats, flagstats] }
         .flatten()
-        .toSortedList { a, b -> a.name <=> b.name }  // Sort by filename
-        .flatMap { it }  // Convert back to individual items
+        .toSortedList { a, b -> a.name <=> b.name }
+        .flatMap { it }
         .collect()
     
     // Run MultiQC on raw BAM stats
@@ -141,16 +129,12 @@ workflow {
         Channel.value('raw_bams')
     )
     
-    // Process BAM files for filtering or direct use
+    // Process BAM files sequentially through filtering (if configured)
     if (params.bam_filter_config) {
-        // Use the pre-created channel for filtering (no new Channel.fromPath!)
-        bam_channel_for_filter = bam_channel_for_filter_prep
-            .map { sid, bam, bai -> tuple(bam, bai) }
-        
-        // Filter BAMs
+        // Filter BAMs - using raw_bam_pairs as input
         filtered_bams = FILTER_BAMS(
-            bam_channel_for_filter.map { it[0] },
-            bam_channel_for_filter.map { it[1] },
+            raw_bam_pairs.map { sid, bam, bai -> bam },
+            raw_bam_pairs.map { sid, bam, bai -> bai },
             bam_filter_config_ch
         )
         
@@ -161,11 +145,11 @@ workflow {
             }
         )
         
-        // CRITICAL FIX: Sort filtered stats files too
+        // Collect filtered stats
         filtered_stats_files = filtered_bam_stats
             .map { sid, stats, flagstats -> [stats, flagstats] }
             .flatten()
-            .toSortedList { a, b -> a.name <=> b.name }  // Sort by filename
+            .toSortedList { a, b -> a.name <=> b.name }
             .flatMap { it }
             .collect()
         
@@ -175,7 +159,7 @@ workflow {
             Channel.value('filtered_bams')
         )
         
-        // CRITICAL FIX: Sort BAMs before collecting for FreeBayes
+        // Prepare filtered BAMs for FreeBayes
         bam_files_ch = filtered_bams
             .toSortedList { a, b -> a[0].name <=> b[0].name }
             .flatMap { it }
@@ -189,23 +173,17 @@ workflow {
             .collect()
         
     } else {
-        // Use original BAMs without filtering - SORT them too
-        bam_channel_for_freebayes = Channel.fromPath(params.bams, checkIfExists: true)
-            .map { bam ->
-                def bai = file("${bam}.bai")
-                return tuple(bam, bai)
-            }
-        
-        bam_files_ch = bam_channel_for_freebayes
-            .toSortedList { a, b -> a[0].name <=> b[0].name }
+        // Use original BAMs without filtering
+        bam_files_ch = raw_bam_pairs
+            .toSortedList { a, b -> a[1].name <=> b[1].name }
             .flatMap { it }
-            .map { bam, bai -> bam }
+            .map { sid, bam, bai -> bam }
             .collect()
             
-        bai_files_ch = bam_channel_for_freebayes
-            .toSortedList { a, b -> a[0].name <=> b[0].name }
+        bai_files_ch = raw_bam_pairs
+            .toSortedList { a, b -> a[1].name <=> b[1].name }
             .flatMap { it }
-            .map { bam, bai -> bai }
+            .map { sid, bam, bai -> bai }
             .collect()
     }
     
@@ -236,9 +214,9 @@ workflow {
         ploidy_map_ch
     )
     
-    // Step 4: Combine VCFs - SORT chunks before combining
+    // Step 4: Combine VCFs - sort chunks before combining
     all_vcfs = vcf_chunks
-        .toSortedList { a, b -> a[0] <=> b[0] }  // Sort by chunk_id
+        .toSortedList { a, b -> a[0] <=> b[0] }
         .flatMap { it }
         .map { chunk_id, vcf -> vcf }
         .collect()
