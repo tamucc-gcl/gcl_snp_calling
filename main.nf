@@ -3,7 +3,6 @@
 nextflow.enable.dsl = 2
 
 // Import modules
-
 include { CREATE_CHUNKS } from './modules/create_chunks'
 include { FILTER_BAMS } from './modules/filter_bams'
 include { FREEBAYES_CHUNK } from './modules/freebayes_chunk'
@@ -24,7 +23,6 @@ params.freebayes_config = null
 params.bam_filter_config = null
 params.ploidy_map = null
 
-// Help message
 def helpMessage() {
     log.info"""
     ================================================================
@@ -96,8 +94,8 @@ workflow {
     } else {
         config_ch = Channel.value([])
     }
-
-    // Simple pattern that worked in all tests
+    
+    // Simple channel pattern that caches properly
     raw_bam_ch = Channel.fromPath(params.bams, checkIfExists: true)
         .map { bam ->
             def bai = file("${bam}.bai")
@@ -107,10 +105,10 @@ workflow {
             tuple(bam.simpleName, bam, bai)
         }
     
-    // Run stats
+    // Run samtools stats on raw BAMs
     raw_bam_stats = SAMTOOLS_STATS_RAW(raw_bam_ch)
     
-    // Collect for MultiQC
+    // Collect stats for MultiQC
     raw_stats_files = raw_bam_stats
         .map { sid, stats, flagstats -> [stats, flagstats] }
         .flatten()
@@ -118,8 +116,9 @@ workflow {
     
     MULTIQC_RAW_BAMS(raw_stats_files, Channel.value('raw_bams'))
     
-    // Filtering
+    // Process BAM files for filtering or direct use
     if (params.bam_filter_config) {
+        // Separate channel for filtering
         filter_ch = Channel.fromPath(params.bams, checkIfExists: true)
             .map { bam -> tuple(bam, file("${bam}.bai")) }
         
@@ -145,13 +144,14 @@ workflow {
         // Collect for FreeBayes
         bam_files_ch = filtered_bams.map { bam, bai -> bam }.collect()
         bai_files_ch = filtered_bams.map { bam, bai -> bai }.collect()
+        
     } else {
         // Use raw BAMs
         raw_for_freebayes = Channel.fromPath(params.bams, checkIfExists: true)
         bam_files_ch = raw_for_freebayes.collect()
         bai_files_ch = raw_for_freebayes.map { bam -> file("${bam}.bai") }.collect()
     }
-    /*
+    
     // Step 1: Create genome chunks
     chunks = CREATE_CHUNKS(reference_ch, params.num_chunks)
     chunk_regions = chunks[1]
@@ -168,7 +168,7 @@ workflow {
         }
         .filter { it != null }
     
-    // Step 3: Run freebayes
+    // Step 3: Run freebayes on each chunk
     vcf_chunks = FREEBAYES_CHUNK(
         chunk_ch,
         reference_ch,
@@ -183,9 +183,8 @@ workflow {
     all_vcfs = vcf_chunks.map { chunk_id, vcf -> vcf }.collect()
     COMBINE_VCFS(all_vcfs, params.output_vcf)
     
-    // Step 5: Summarize
+    // Step 5: Summarize final VCF
     SUMMARIZE_VCFS(COMBINE_VCFS.out.vcf, ploidy_map_ch)
-    */
 }
 
 workflow.onComplete {
