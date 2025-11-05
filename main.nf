@@ -3,7 +3,6 @@
 nextflow.enable.dsl = 2
 
 // Import modules
-include { CREATE_BAM_LIST } from './modules/create_bam_list'
 include { CREATE_CHUNKS } from './modules/create_chunks'
 include { FILTER_BAMS } from './modules/filter_bams'
 include { FREEBAYES_CHUNK } from './modules/freebayes_chunk'
@@ -24,7 +23,7 @@ params.freebayes_config = null
 params.bam_filter_config = null
 params.ploidy_map = null
 
-// Help message and validation (keeping your existing code)
+// Help message
 def helpMessage() {
     log.info"""
     ================================================================
@@ -97,28 +96,33 @@ workflow {
         config_ch = Channel.value([])
     }
     
-    // ========== KEY CHANGE: Create deterministic BAM list file ==========
-    // This process creates a sorted text file listing all BAMs
-    // The file content is deterministic, so it caches properly
-    bam_list_file = CREATE_BAM_LIST(Channel.value(params.bams))
+    // ========== CRITICAL FIX: Create sorted list ONCE, then convert to value channel ==========
+    // This ensures all downstream uses have the same deterministic input
     
-    // Now create channels from this deterministic list file
-    // These will all have the same source, so cache hashes are consistent
+    bam_list_sorted = Channel.fromPath(params.bams, checkIfExists: true)
+        .collect()
+        .map { files -> files.sort { it.name } }  // Sort by filename
+        .first()  // Convert to value channel - THIS IS KEY
     
-    // For stats on raw BAMs
-    raw_bam_ch = bam_list_file
-        .splitText()
-        .map { line -> 
-            def bam = file(line.trim())
+    // Verify all BAM files have indices
+    bam_list_sorted.subscribe { bams ->
+        bams.each { bam ->
             def bai = file("${bam}.bai")
             if (!bai.exists()) {
-                error "BAM index file not found: ${bai}"
+                error "BAM index file not found: ${bai}. Please run 'samtools index ${bam}'"
             }
-            return tuple(bam.simpleName, bam, bai)
         }
+        log.info "Found ${bams.size()} BAM files with indices"
+    }
+    
+    // Now create channels from this stable value channel source
+    // Channel 1: For raw stats
+    raw_stats_ch = bam_list_sorted
+        .flatMap { it }  // Emit each BAM individually
+        .map { bam -> tuple(bam.simpleName, bam, file("${bam}.bai")) }
     
     // Run samtools stats on raw BAMs
-    raw_bam_stats = SAMTOOLS_STATS_RAW(raw_bam_ch)
+    raw_bam_stats = SAMTOOLS_STATS_RAW(raw_stats_ch)
     
     // Collect stats for MultiQC
     raw_stats_files = raw_bam_stats
@@ -134,19 +138,15 @@ workflow {
     
     // Process BAM files for filtering or direct use
     if (params.bam_filter_config) {
-        // For filtering - recreate channel from same list file
-        bam_filter_ch = bam_list_file
-            .splitText()
-            .map { line ->
-                def bam = file(line.trim())
-                def bai = file("${bam}.bai")
-                return tuple(bam, bai)
-            }
+        // Channel 2: For filtering - recreate from same value channel
+        filter_ch = bam_list_sorted
+            .flatMap { it }
+            .map { bam -> tuple(bam, file("${bam}.bai")) }
         
         // Filter BAMs
         filtered_bams = FILTER_BAMS(
-            bam_filter_ch.map { bam, bai -> bam },
-            bam_filter_ch.map { bam, bai -> bai },
+            filter_ch.map { bam, bai -> bam },
+            filter_ch.map { bam, bai -> bai },
             bam_filter_config_ch
         )
         
@@ -174,17 +174,10 @@ workflow {
         bai_files_ch = filtered_bams.map { bam, bai -> bai }.collect()
         
     } else {
-        // Use original BAMs - recreate channel from same list file
-        bam_freebayes_ch = bam_list_file
-            .splitText()
-            .map { line ->
-                def bam = file(line.trim())
-                def bai = file("${bam}.bai")
-                return tuple(bam, bai)
-            }
-        
-        bam_files_ch = bam_freebayes_ch.map { bam, bai -> bam }.collect()
-        bai_files_ch = bam_freebayes_ch.map { bam, bai -> bai }.collect()
+        // Channel 3: For FreeBayes - recreate from same value channel
+        // Collect BAMs and BAIs directly from the sorted list
+        bam_files_ch = bam_list_sorted.map { bams -> bams }
+        bai_files_ch = bam_list_sorted.map { bams -> bams.collect { file("${it}.bai") } }
     }
     
     // Step 1: Create genome chunks
@@ -223,7 +216,6 @@ workflow {
 }
 
 workflow.onComplete {
-    // Your existing onComplete code
     log.info "================================================================"
     log.info "Pipeline Summary"
     log.info "================================================================"
@@ -242,6 +234,11 @@ workflow.onComplete {
         log.info "- Raw BAMs MultiQC: ${params.output_dir}/multiqc_reports/multiqc_raw_bams.html"
         if (params.bam_filter_config) {
             log.info "- Filtered BAMs MultiQC: ${params.output_dir}/multiqc_reports/multiqc_filtered_bams.html"
+        }
+        log.info ""
+        log.info "Pipeline used exactly ${params.num_chunks} chunks with complete genome coverage"
+        if (params.ploidy_map) {
+            log.info "Used per-BAM ploidy values from: ${params.ploidy_map}"
         }
     } else {
         log.info ""
