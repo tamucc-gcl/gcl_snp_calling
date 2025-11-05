@@ -98,8 +98,8 @@ workflow {
         config_ch = Channel.value([])
     }
     
-    // Create BAM channel for stats
-    bam_channel_for_stats = Channel.fromPath(params.bams, checkIfExists: true)
+    // CRITICAL FIX: Create BAM channel ONCE and make all needed copies
+    Channel.fromPath(params.bams, checkIfExists: true)
         .map { bam ->
             def bai = file("${bam}.bai")
             if (!bai.exists()) {
@@ -107,9 +107,15 @@ workflow {
             }
             return tuple(bam.simpleName, bam, bai)
         }
+        .into { 
+            bam_channel_for_stats; 
+            bam_channel_for_filter_prep; 
+            bam_channel_for_freebayes_direct;
+            bam_channel_for_debug 
+        }
     
     // DEBUG: Log what files we're processing
-    bam_channel_for_stats
+    bam_channel_for_debug
         .toList()
         .subscribe { list ->
             log.info "DEBUG: Processing ${list.size()} BAM files:"
@@ -137,12 +143,9 @@ workflow {
     
     // Process BAM files for filtering or direct use
     if (params.bam_filter_config) {
-        // Create separate channel for filtering
-        bam_channel_for_filter = Channel.fromPath(params.bams, checkIfExists: true)
-            .map { bam ->
-                def bai = file("${bam}.bai")
-                return tuple(bam, bai)
-            }
+        // Use the pre-created channel for filtering (no new Channel.fromPath!)
+        bam_channel_for_filter = bam_channel_for_filter_prep
+            .map { sid, bam, bai -> tuple(bam, bai) }
         
         // Filter BAMs
         filtered_bams = FILTER_BAMS(
