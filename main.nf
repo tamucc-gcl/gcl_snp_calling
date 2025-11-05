@@ -168,6 +168,12 @@ workflow {
         config_ch = Channel.value([])
     }
     
+    // Use aliases inline
+    SAMTOOLS_STATS_RAW = samtools_stats
+    MULTIQC_RAW_BAMS = multiqc
+    SAMTOOLS_STATS_FILTERED = samtools_stats
+    MULTIQC_FILTERED_BAMS = multiqc
+
     // ========== CRITICAL FIX: Create sorted list ONCE, then convert to value channel ==========
     // This ensures all downstream uses have the same deterministic input
     
