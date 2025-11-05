@@ -16,7 +16,7 @@ include { multiqc as MULTIQC_FILTERED_BAMS } from './modules/multiqc'
 */
 
 // ADD INLINE PROCESS DEFINITIONS
-process samtools_stats {
+process SAMTOOLS_STATS_RAW {
     label 'samtools_stats'
     tag "$sample_id"
     
@@ -33,7 +33,56 @@ process samtools_stats {
     """
 }
 
-process multiqc {
+process MULTIQC_RAW_BAMS {
+    label 'multiqc'
+    tag "${step_name}"
+    publishDir "${params.output_dir}/multiqc_reports", mode: 'copy', pattern: "*.html"
+    
+    input:
+    path(input_files)
+    val(step_name)
+    
+    output:
+    path("multiqc_${step_name}.html")
+    path("multiqc_${step_name}_general_stats.txt")
+    
+    script:
+    """
+    multiqc \
+        --title "MultiQC Report - ${step_name}" \
+        --filename multiqc_${step_name}.html \
+        --export \
+        --data-dir \
+        .
+    
+    DATA_DIR="multiqc_${step_name}_data"
+    
+    if [ -f "\$DATA_DIR/multiqc_general_stats.txt" ]; then
+        cp "\$DATA_DIR/multiqc_general_stats.txt" "multiqc_${step_name}_general_stats.txt"
+    else
+        touch "multiqc_${step_name}_general_stats.txt"
+    fi
+    """
+}
+
+process SAMTOOLS_STATS_FILTERED {
+    label 'samtools_stats'
+    tag "$sample_id"
+    
+    input:
+    tuple val(sample_id), path(bam), path(bam_index)
+    
+    output:
+    tuple val(sample_id), path("${sample_id}.stats"), path("${sample_id}.flagstats")
+    
+    script:
+    """
+    samtools stats -@ ${task.cpus ?: 4} ${bam} > ${sample_id}.stats
+    samtools flagstat -@ ${task.cpus ?: 4} ${bam} > ${sample_id}.flagstats
+    """
+}
+
+process MULTIQC_FILTERED_BAMS {
     label 'multiqc'
     tag "${step_name}"
     publishDir "${params.output_dir}/multiqc_reports", mode: 'copy', pattern: "*.html"
@@ -167,12 +216,6 @@ workflow {
     } else {
         config_ch = Channel.value([])
     }
-    
-    // Use aliases inline
-    SAMTOOLS_STATS_RAW = samtools_stats
-    MULTIQC_RAW_BAMS = multiqc
-    SAMTOOLS_STATS_FILTERED = samtools_stats
-    MULTIQC_FILTERED_BAMS = multiqc
 
     // ========== CRITICAL FIX: Create sorted list ONCE, then convert to value channel ==========
     // This ensures all downstream uses have the same deterministic input
