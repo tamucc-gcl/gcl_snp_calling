@@ -180,6 +180,7 @@ workflow {
         bai_files_ch = bam_list_sorted.map { bams -> bams.collect { file("${it}.bai") } }
     }
     
+    /*
     // Step 1: Create genome chunks
     chunks = CREATE_CHUNKS(reference_ch, params.num_chunks)
     chunk_regions = chunks[1]
@@ -213,6 +214,7 @@ workflow {
     
     // Step 5: Summarize final VCF
     SUMMARIZE_VCFS(COMBINE_VCFS.out.vcf, ploidy_map_ch)
+    */
 }
 
 workflow.onComplete {
