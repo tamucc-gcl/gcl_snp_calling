@@ -3,6 +3,7 @@
 nextflow.enable.dsl = 2
 
 // Import modules
+include { CREATE_BAM_LIST } from './modules/create_bam_list'
 include { CREATE_CHUNKS } from './modules/create_chunks'
 include { FILTER_BAMS } from './modules/filter_bams'
 include { FREEBAYES_CHUNK } from './modules/freebayes_chunk'
@@ -23,7 +24,7 @@ params.freebayes_config = null
 params.bam_filter_config = null
 params.ploidy_map = null
 
-// Help message
+// Help message and validation (keeping your existing code)
 def helpMessage() {
     log.info"""
     ================================================================
@@ -48,13 +49,11 @@ def helpMessage() {
     """.stripIndent()
 }
 
-// Show help message if requested
 if (params.help) {
     helpMessage()
     exit 0
 }
 
-// Input validation
 if (!params.bams || !params.reference) {
     log.error "ERROR: Please provide both --bams and --reference parameters"
     helpMessage()
@@ -98,29 +97,33 @@ workflow {
         config_ch = Channel.value([])
     }
     
-    // ===== CRITICAL FIX: Use fromFilePairs like the working QC pipeline =====
-    Channel
-        .fromFilePairs(params.bams, size: 1, flat: true) { file ->
-            file.simpleName
-        }
-        .map { sample_id, bam ->
+    // ========== KEY CHANGE: Create deterministic BAM list file ==========
+    // This process creates a sorted text file listing all BAMs
+    // The file content is deterministic, so it caches properly
+    bam_list_file = CREATE_BAM_LIST(Channel.value(params.bams))
+    
+    // Now create channels from this deterministic list file
+    // These will all have the same source, so cache hashes are consistent
+    
+    // For stats on raw BAMs
+    raw_bam_ch = bam_list_file
+        .splitText()
+        .map { line -> 
+            def bam = file(line.trim())
             def bai = file("${bam}.bai")
             if (!bai.exists()) {
-                error "BAM index file not found: ${bai}. Please run 'samtools index ${bam}'"
+                error "BAM index file not found: ${bai}"
             }
-            return tuple(sample_id, bam, bai)
+            return tuple(bam.simpleName, bam, bai)
         }
-        .set { raw_bam_pairs }
     
     // Run samtools stats on raw BAMs
-    raw_bam_stats = SAMTOOLS_STATS_RAW(raw_bam_pairs)
+    raw_bam_stats = SAMTOOLS_STATS_RAW(raw_bam_ch)
     
     // Collect stats for MultiQC
     raw_stats_files = raw_bam_stats
         .map { sid, stats, flagstats -> [stats, flagstats] }
         .flatten()
-        .toSortedList { a, b -> a.name <=> b.name }
-        .flatMap { it }
         .collect()
     
     // Run MultiQC on raw BAM stats
@@ -129,12 +132,21 @@ workflow {
         Channel.value('raw_bams')
     )
     
-    // Process BAM files sequentially through filtering (if configured)
+    // Process BAM files for filtering or direct use
     if (params.bam_filter_config) {
-        // Filter BAMs - using raw_bam_pairs as input
+        // For filtering - recreate channel from same list file
+        bam_filter_ch = bam_list_file
+            .splitText()
+            .map { line ->
+                def bam = file(line.trim())
+                def bai = file("${bam}.bai")
+                return tuple(bam, bai)
+            }
+        
+        // Filter BAMs
         filtered_bams = FILTER_BAMS(
-            raw_bam_pairs.map { sid, bam, bai -> bam },
-            raw_bam_pairs.map { sid, bam, bai -> bai },
+            bam_filter_ch.map { bam, bai -> bam },
+            bam_filter_ch.map { bam, bai -> bai },
             bam_filter_config_ch
         )
         
@@ -145,12 +157,10 @@ workflow {
             }
         )
         
-        // Collect filtered stats
+        // Collect filtered stats for MultiQC
         filtered_stats_files = filtered_bam_stats
             .map { sid, stats, flagstats -> [stats, flagstats] }
             .flatten()
-            .toSortedList { a, b -> a.name <=> b.name }
-            .flatMap { it }
             .collect()
         
         // Run MultiQC on filtered BAM stats
@@ -159,32 +169,22 @@ workflow {
             Channel.value('filtered_bams')
         )
         
-        // Prepare filtered BAMs for FreeBayes
-        bam_files_ch = filtered_bams
-            .toSortedList { a, b -> a[0].name <=> b[0].name }
-            .flatMap { it }
-            .map { bam, bai -> bam }
-            .collect()
-            
-        bai_files_ch = filtered_bams
-            .toSortedList { a, b -> a[0].name <=> b[0].name }
-            .flatMap { it }
-            .map { bam, bai -> bai }
-            .collect()
+        // Collect filtered BAMs for FreeBayes
+        bam_files_ch = filtered_bams.map { bam, bai -> bam }.collect()
+        bai_files_ch = filtered_bams.map { bam, bai -> bai }.collect()
         
     } else {
-        // Use original BAMs without filtering
-        bam_files_ch = raw_bam_pairs
-            .toSortedList { a, b -> a[1].name <=> b[1].name }
-            .flatMap { it }
-            .map { sid, bam, bai -> bam }
-            .collect()
-            
-        bai_files_ch = raw_bam_pairs
-            .toSortedList { a, b -> a[1].name <=> b[1].name }
-            .flatMap { it }
-            .map { sid, bam, bai -> bai }
-            .collect()
+        // Use original BAMs - recreate channel from same list file
+        bam_freebayes_ch = bam_list_file
+            .splitText()
+            .map { line ->
+                def bam = file(line.trim())
+                def bai = file("${bam}.bai")
+                return tuple(bam, bai)
+            }
+        
+        bam_files_ch = bam_freebayes_ch.map { bam, bai -> bam }.collect()
+        bai_files_ch = bam_freebayes_ch.map { bam, bai -> bai }.collect()
     }
     
     // Step 1: Create genome chunks
@@ -214,13 +214,8 @@ workflow {
         ploidy_map_ch
     )
     
-    // Step 4: Combine VCFs - sort chunks before combining
-    all_vcfs = vcf_chunks
-        .toSortedList { a, b -> a[0] <=> b[0] }
-        .flatMap { it }
-        .map { chunk_id, vcf -> vcf }
-        .collect()
-        
+    // Step 4: Combine VCFs
+    all_vcfs = vcf_chunks.map { chunk_id, vcf -> vcf }.collect()
     COMBINE_VCFS(all_vcfs, params.output_vcf)
     
     // Step 5: Summarize final VCF
@@ -228,6 +223,7 @@ workflow {
 }
 
 workflow.onComplete {
+    // Your existing onComplete code
     log.info "================================================================"
     log.info "Pipeline Summary"
     log.info "================================================================"
@@ -247,16 +243,6 @@ workflow.onComplete {
         if (params.bam_filter_config) {
             log.info "- Filtered BAMs MultiQC: ${params.output_dir}/multiqc_reports/multiqc_filtered_bams.html"
         }
-        log.info ""
-        log.info "Pipeline used exactly ${params.num_chunks} chunks with complete genome coverage"
-        if (params.ploidy_map) {
-            log.info "Used per-BAM ploidy values from: ${params.ploidy_map}"
-        }
-        log.info ""
-        log.info "You can view the execution reports at:"
-        log.info "- Timeline: ${params.output_dir}/pipeline/pipeline_timeline.html"
-        log.info "- Report:   ${params.output_dir}/pipeline/pipeline_report.html"
-        log.info "- Trace:    ${params.output_dir}/pipeline/pipeline_trace.txt"
     } else {
         log.info ""
         log.info "Pipeline failed. Check the error messages above."
