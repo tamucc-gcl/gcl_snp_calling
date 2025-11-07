@@ -13,6 +13,7 @@ process SUMMARIZE_VCFS {
 
     script:
     def has_ploidy_map = ploidy_map.name != 'NO_FILE'
+    def ploidy_arg = has_ploidy_map ? "${ploidy_map}" : "NO_PLOIDY_MAP"
     """
     # Generate bcftools stats
     bcftools stats ${vcf} > ${vcf.simpleName}.stats.txt
@@ -25,18 +26,14 @@ process SUMMARIZE_VCFS {
     VARIANT_COUNT=\$(zcat ${vcf} | grep -v '^#' | wc -l)
     echo "Total variants in VCF: \$VARIANT_COUNT"
     
-    # Prepare ploidy map argument
-    if [ "${has_ploidy_map}" = "true" ]; then
-        PLOIDY_MAP_ARG="${ploidy_map}"
-        echo "Using ploidy map: ${ploidy_map}"
-    else
-        PLOIDY_MAP_ARG="NO_PLOIDY_MAP"
-        echo "No ploidy map provided"
-    fi
+    # Debug: Show what we're passing to R
+    echo "Has ploidy map: ${has_ploidy_map}"
+    echo "Ploidy argument to R: ${ploidy_arg}"
 
     if [ \$VARIANT_COUNT -gt 10 ]; then
         echo "Running QC plot generation..."
-        Rscript vcf_qc_plots.R ${vcf} ${vcf.simpleName} \$PLOIDY_MAP_ARG
+        # Pass the ploidy argument directly without bash variable expansion issues
+        Rscript vcf_qc_plots.R ${vcf} ${vcf.simpleName} ${ploidy_arg}
     else
         echo "Too few variants (\$VARIANT_COUNT) for meaningful QC plots. Creating placeholder images..."
         
