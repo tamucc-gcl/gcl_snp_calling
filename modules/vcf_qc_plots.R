@@ -37,9 +37,6 @@ library(forcats)
 #### Data ####
 raw_vcf <- read.vcfR(vcf_file)
 
-# Initialize ploidy_map to NULL to ensure it exists
-ploidy_map <- NULL
-
 if (!is.null(ploidy_map_file) && ploidy_map_file != "NO_FILE" && ploidy_map_file != "NO_PLOIDY_MAP") {
   cat("Attempting to read ploidy map file:", ploidy_map_file, "\n")
   
