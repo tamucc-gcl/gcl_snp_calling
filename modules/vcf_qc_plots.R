@@ -8,8 +8,16 @@ if (length(args) < 2) {
 
 vcf_file <- args[1]
 output_prefix <- args[2]
-ploidy_map_file <- if (length(args) >= 3 && args[3] != "NO_PLOIDY_MAP") args[3] else NULL
 
+# Initialize ploidy_map to NULL first to ensure it always exists
+ploidy_map <- NULL
+
+# Check if a ploidy map file was provided
+if (length(args) >= 3 && args[3] != "NO_PLOIDY_MAP" && args[3] != "NO_FILE") {
+  ploidy_map_file <- args[3]
+} else {
+  ploidy_map_file <- NULL
+}
 
 cat("Processing VCF:", vcf_file, "\n")
 cat("Output prefix:", output_prefix, "\n")
@@ -29,8 +37,11 @@ library(forcats)
 #### Data ####
 raw_vcf <- read.vcfR(vcf_file)
 
-if (!is.null(ploidy_map_file)) {
-  cat("Ploidy map file:", ploidy_map_file, "\n")
+# Initialize ploidy_map to NULL to ensure it exists
+ploidy_map <- NULL
+
+if (!is.null(ploidy_map_file) && ploidy_map_file != "NO_FILE" && ploidy_map_file != "NO_PLOIDY_MAP") {
+  cat("Attempting to read ploidy map file:", ploidy_map_file, "\n")
   
   # Try to read the ploidy map with error handling
   tryCatch({
@@ -40,18 +51,27 @@ if (!is.null(ploidy_map_file)) {
                              stringsAsFactors = FALSE,
                              comment.char = "#")
     
-    cat("Loaded ploidy information for", nrow(ploidy_map), "samples\n")
+    cat("Successfully loaded ploidy information for", nrow(ploidy_map), "samples\n")
     cat("Ploidy map class:", class(ploidy_map), "\n")
     cat("Ploidy map dimensions:", dim(ploidy_map), "\n")
   }, error = function(e) {
     cat("Error reading ploidy map file:", e$message, "\n")
+    cat("Setting ploidy_map to NULL\n")
     ploidy_map <<- NULL
   })
   
 } else {
-  cat("No ploidy map provided - setting to NULL\n")
+  cat("No ploidy map provided (file:", ploidy_map_file, ")\n")
+  cat("Setting ploidy_map to NULL\n")
   ploidy_map <- NULL
-  cat("Ploidy map is NULL:", is.null(ploidy_map), "\n")
+}
+
+# Verify the state of ploidy_map
+cat("Final ploidy_map status:\n")
+cat("  - is.null(ploidy_map):", is.null(ploidy_map), "\n")
+if (!is.null(ploidy_map)) {
+  cat("  - class(ploidy_map):", class(ploidy_map), "\n")
+  cat("  - nrow(ploidy_map):", nrow(ploidy_map), "\n")
 }
 
 #### QC Plots ####
@@ -226,20 +246,27 @@ raw_snp_pca <- raw_pca_scores %>%
   geom_hline(yintercept = 0, linetype = 'dashed') +
   geom_vline(xintercept = 0, linetype = 'dashed')
 
-# More robust check for ploidy_map
-# Check if ploidy_map exists, is a data frame, and has the expected structure
-has_valid_ploidy_map <- FALSE
-if(!is.null(ploidy_map)) {
-  if(is.data.frame(ploidy_map)) {
-    if(nrow(ploidy_map) > 0) {
-      has_valid_ploidy_map <- TRUE
-      cat("Valid ploidy map detected with", nrow(ploidy_map), "samples\n")
+# Extremely defensive check for ploidy_map
+use_text_labels <- FALSE
+
+# First check if ploidy_map exists and is not NULL
+if (!is.null(ploidy_map)) {
+  cat("Checking ploidy_map for label decision...\n")
+  # Then check if it's a data frame
+  if (is.data.frame(ploidy_map)) {
+    # Then check if it has rows
+    if (nrow(ploidy_map) > 0) {
+      # Finally check if it has fewer than 10 rows
+      if (nrow(ploidy_map) < 10) {
+        use_text_labels <- TRUE
+        cat("Will use text labels (small dataset with", nrow(ploidy_map), "samples)\n")
+      }
     }
   }
 }
 
-# Use the validated flag for the conditional
-if(has_valid_ploidy_map && nrow(ploidy_map) < 10){
+# Apply the plotting based on the flag
+if (use_text_labels) {
   raw_snp_pca <- raw_snp_pca +
     geom_text(aes(label = sample_id)) 
 } else {
