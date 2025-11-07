@@ -221,7 +221,7 @@ raw_snp_pca <- raw_pca_scores %>%
   geom_hline(yintercept = 0, linetype = 'dashed') +
   geom_vline(xintercept = 0, linetype = 'dashed')
 
-if(!is.null(ploidy_map) & nrow(ploidy_map) < 10){
+if(!is.null(ploidy_map) && nrow(ploidy_map) > 0 && nrow(ploidy_map) < 10){
   raw_snp_pca <- raw_snp_pca +
     geom_text(aes(label = sample_id)) 
 } else {
@@ -235,7 +235,7 @@ if(!is.null(ploidy_map) & nrow(ploidy_map) < 10){
 
 raw_snp_pca <- raw_snp_pca +
   labs(x = str_c('PC1 (', pct_var[1], ")"),
-       y = str_c('PC1 (', pct_var[2], ")")) +
+       y = str_c('PC2 (', pct_var[2], ")")) +
   theme_classic(base_size = 16) +
   theme(panel.background = element_rect(colour = 'black')) 
 
