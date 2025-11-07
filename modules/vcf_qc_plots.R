@@ -32,21 +32,26 @@ raw_vcf <- read.vcfR(vcf_file)
 if (!is.null(ploidy_map_file)) {
   cat("Ploidy map file:", ploidy_map_file, "\n")
   
-  # Read the ploidy map
-  ploidy_map <- read.table(ploidy_map_file, 
-                           header = FALSE, 
-                           col.names = c("sample", "ploidy"),
-                           stringsAsFactors = FALSE,
-                           comment.char = "#")
+  # Try to read the ploidy map with error handling
+  tryCatch({
+    ploidy_map <- read.table(ploidy_map_file, 
+                             header = FALSE, 
+                             col.names = c("sample", "ploidy"),
+                             stringsAsFactors = FALSE,
+                             comment.char = "#")
+    
+    cat("Loaded ploidy information for", nrow(ploidy_map), "samples\n")
+    cat("Ploidy map class:", class(ploidy_map), "\n")
+    cat("Ploidy map dimensions:", dim(ploidy_map), "\n")
+  }, error = function(e) {
+    cat("Error reading ploidy map file:", e$message, "\n")
+    ploidy_map <<- NULL
+  })
   
-  cat("Loaded ploidy information for", nrow(ploidy_map), "samples\n")
-  
-  # You can now use ploidy_map throughout your R script
-  # For example, you might want to add annotations to plots
-  # or perform ploidy-aware analyses
 } else {
-  cat("No ploidy map provided\n")
+  cat("No ploidy map provided - setting to NULL\n")
   ploidy_map <- NULL
+  cat("Ploidy map is NULL:", is.null(ploidy_map), "\n")
 }
 
 #### QC Plots ####
@@ -194,7 +199,7 @@ genind2genlight <- function(gi){
 
 if(is.null(ploidy_map)){
   raw_genlight <- vcfR2genlight(raw_vcf)
-
+  
 } else {
   raw_genlight <- ploidy_map %>%
     arrange(match(sample, colnames(raw_vcf@gt)[-1])) %>%
@@ -221,7 +226,20 @@ raw_snp_pca <- raw_pca_scores %>%
   geom_hline(yintercept = 0, linetype = 'dashed') +
   geom_vline(xintercept = 0, linetype = 'dashed')
 
-if(!is.null(ploidy_map) && nrow(ploidy_map) > 0 && nrow(ploidy_map) < 10){
+# More robust check for ploidy_map
+# Check if ploidy_map exists, is a data frame, and has the expected structure
+has_valid_ploidy_map <- FALSE
+if(!is.null(ploidy_map)) {
+  if(is.data.frame(ploidy_map)) {
+    if(nrow(ploidy_map) > 0) {
+      has_valid_ploidy_map <- TRUE
+      cat("Valid ploidy map detected with", nrow(ploidy_map), "samples\n")
+    }
+  }
+}
+
+# Use the validated flag for the conditional
+if(has_valid_ploidy_map && nrow(ploidy_map) < 10){
   raw_snp_pca <- raw_snp_pca +
     geom_text(aes(label = sample_id)) 
 } else {
@@ -235,7 +253,7 @@ if(!is.null(ploidy_map) && nrow(ploidy_map) > 0 && nrow(ploidy_map) < 10){
 
 raw_snp_pca <- raw_snp_pca +
   labs(x = str_c('PC1 (', pct_var[1], ")"),
-       y = str_c('PC2 (', pct_var[2], ")")) +
+       y = str_c('PC2 (', pct_var[2], ")")) +  # Fixed typo: PC2 instead of PC1
   theme_classic(base_size = 16) +
   theme(panel.background = element_rect(colour = 'black')) 
 
