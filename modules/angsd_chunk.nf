@@ -13,8 +13,8 @@ process ANGSD_CHUNK {
     path sites_file  // Optional sites file for specific positions
     
     output:
-    tuple val(chunk_id), path("chunk_${chunk_id}.*"), emit: chunk_files
-    path "chunk_${chunk_id}.arg", emit: args_file
+    tuple val(chunk_id), path("${chunk_id}.*"), emit: chunk_files
+    path "${chunk_id}.arg", emit: args_file
     
     script:
     def config_file = config.size() > 0 ? config[0] : null
@@ -70,7 +70,7 @@ process ANGSD_CHUNK {
     ANGSD_CMD="angsd -bam bam.list"
     ANGSD_CMD="\$ANGSD_CMD -ref ${reference}"
     ANGSD_CMD="\$ANGSD_CMD -rf angsd_regions.txt"
-    ANGSD_CMD="\$ANGSD_CMD -out chunk_${chunk_id}"
+    ANGSD_CMD="\$ANGSD_CMD -out ${chunk_id}"
     ANGSD_CMD="\$ANGSD_CMD -nThreads ${task.cpus ?: 8}"
     
     # Add sites file if provided
@@ -257,32 +257,32 @@ PYTHON_CONFIG
     \$ANGSD_CMD
     
     # Save the arguments file for debugging
-    if [ -f "chunk_${chunk_id}.arg" ]; then
+    if [ -f "${chunk_id}.arg" ]; then
         echo "ANGSD completed successfully"
-        echo "Arguments saved in chunk_${chunk_id}.arg"
+        echo "Arguments saved in ${chunk_id}.arg"
         
         # List output files
         echo "Output files generated:"
-        ls -la chunk_${chunk_id}.*
+        ls -la ${chunk_id}.*
         
         # Check if beagle file has content
-        if [ -f "chunk_${chunk_id}.beagle.gz" ]; then
-            SITES=\$(zcat chunk_${chunk_id}.beagle.gz | tail -n +2 | wc -l)
+        if [ -f "${chunk_id}.beagle.gz" ]; then
+            SITES=\$(zcat ${chunk_id}.beagle.gz | tail -n +2 | wc -l)
             echo "Sites with genotype likelihoods: \$SITES"
         fi
         
         # Check if BCF was generated
-        if [ -f "chunk_${chunk_id}.bcf" ]; then
-            VARIANTS=\$(bcftools view -H chunk_${chunk_id}.bcf | wc -l)
+        if [ -f "${chunk_id}.bcf" ]; then
+            VARIANTS=\$(bcftools view -H ${chunk_id}.bcf | wc -l)
             echo "Variants in BCF: \$VARIANTS"
         fi
         
     else
         echo "WARNING: ANGSD may have failed - no .arg file generated"
         # Create empty outputs to prevent pipeline failure
-        touch chunk_${chunk_id}.beagle.gz
-        touch chunk_${chunk_id}.mafs.gz
-        touch chunk_${chunk_id}.bcf
+        touch ${chunk_id}.beagle.gz
+        touch ${chunk_id}.mafs.gz
+        touch ${chunk_id}.bcf
         echo "Created empty output files"
     fi
     
