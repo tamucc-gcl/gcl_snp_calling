@@ -251,10 +251,10 @@ PYTHON_CONFIG
             echo "Sites with genotype likelihoods: \$SITES"
         fi
         
-        # Check if VCF was generated
-        if [ -f "chunk_${chunk_id}.vcf.gz" ]; then
-            VARIANTS=\$(zcat chunk_${chunk_id}.vcf.gz | grep -v '^#' | wc -l)
-            echo "Variants in VCF: \$VARIANTS"
+        # Check if BCF was generated
+        if [ -f "chunk_${chunk_id}.bcf" ]; then
+            VARIANTS=\$(bcftools view -H chunk_${chunk_id}.bcf | wc -l)
+            echo "Variants in BCF: \$VARIANTS"
         fi
         
     else
@@ -262,6 +262,7 @@ PYTHON_CONFIG
         # Create empty outputs to prevent pipeline failure
         touch chunk_${chunk_id}.beagle.gz
         touch chunk_${chunk_id}.mafs.gz
+        touch chunk_${chunk_id}.bcf
         echo "Created empty output files"
     fi
     
