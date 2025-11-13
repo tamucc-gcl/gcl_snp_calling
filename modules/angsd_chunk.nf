@@ -35,6 +35,19 @@ process ANGSD_CHUNK {
         exit 1
     fi
     
+    # Verify indices exist
+    echo "Verifying BAM indices:"
+    for bam in *.bam; do
+        if [ -f "\$bam" ]; then
+            if [ -f "\${bam}.bai" ]; then
+                echo "  \$bam: index present"
+            else
+                echo "  \$bam: ERROR - index missing!"
+                exit 1
+            fi
+        fi
+    done
+    
     # Create BAM list file
     ls -1 *.bam > bam.list
     echo "BAM list created with \$BAM_COUNT files"
@@ -75,12 +88,22 @@ import json
 import sys
 
 try:
-    config_file = '${config_file}'
+    # Read the config file
+    config_file = '${config_file}' if '${config_file}' else None
+    if not config_file:
+        # Try to find a JSON file in current directory
+        import glob
+        json_files = glob.glob('*.json')
+        if json_files:
+            config_file = json_files[0]
+    
+    if not config_file:
+        raise FileNotFoundError("No config file found")
     
     with open(config_file) as f:
         config = json.load(f)
     
-    # Extract parameter groups
+    # Extract sections based on structure
     basic = config.get('basic_options', {})
     filters = config.get('filters', {})
     gl_options = config.get('genotype_likelihoods', {})
@@ -90,7 +113,9 @@ try:
     
     params = []
     
-    # Basic options
+    # ========== BASIC OPTIONS ==========
+    if 'doCounts' in basic:
+        params.append(f"-doCounts {int(basic['doCounts'])}")
     if 'remove_bads' in basic:
         params.append(f"-remove_bads {int(basic['remove_bads'])}")
     if 'unique_only' in basic:
@@ -106,7 +131,7 @@ try:
     if 'checkBamHeaders' in basic:
         params.append(f"-checkBamHeaders {int(basic['checkBamHeaders'])}")
     
-    # Quality filters
+    # ========== FILTERS ==========
     if 'minQ' in filters:
         params.append(f"-minQ {filters['minQ']}")
     if 'minMapQ' in filters:
@@ -122,20 +147,24 @@ try:
     if 'setMaxDepthInd' in filters:
         params.append(f"-setMaxDepthInd {filters['setMaxDepthInd']}")
     
-    # Genotype likelihood model
-    gl_model = gl_options.get('GL', 1)  # Default to SAMtools model
+    # ========== GENOTYPE LIKELIHOODS ==========
+    gl_model = gl_options.get('GL', 1)
     params.append(f"-GL {gl_model}")
     print(f"echo 'Using genotype likelihood model: {gl_model}'")
     
-    # Add genotype likelihood calculation options
-    if gl_options.get('doGlf'):
-        params.append(f"-doGlf {gl_options['doGlf']}")
+    # Always output beagle format
+    params.append("-doGlf 2")
+    
     if gl_options.get('doGeno'):
         params.append(f"-doGeno {gl_options['doGeno']}")
     if gl_options.get('doPost'):
         params.append(f"-doPost {gl_options['doPost']}")
+    if gl_options.get('geno_minDepth'):
+        params.append(f"-geno_minDepth {gl_options['geno_minDepth']}")
+    if gl_options.get('geno_minMM'):
+        params.append(f"-geno_minMM {gl_options['geno_minMM']}")
     
-    # SNP calling options
+    # ========== SNP CALLING ==========
     if snp_calling.get('doMajorMinor'):
         params.append(f"-doMajorMinor {snp_calling['doMajorMinor']}")
     if snp_calling.get('doMaf'):
@@ -144,12 +173,14 @@ try:
         params.append(f"-SNP_pval {snp_calling['SNP_pval']}")
     if snp_calling.get('rmTriallelic'):
         params.append(f"-rmTriallelic {int(snp_calling['rmTriallelic'])}")
+    if snp_calling.get('skipTriallelic'):
+        params.append(f"-skipTriallelic {int(snp_calling['skipTriallelic'])}")
     if snp_calling.get('minMaf'):
         params.append(f"-minMaf {snp_calling['minMaf']}")
     if snp_calling.get('minLRT'):
         params.append(f"-minLRT {snp_calling['minLRT']}")
     
-    # Pooled sequencing specific options
+    # ========== POOLED SEQUENCING ==========
     if pooled_opts.get('doSaf'):
         params.append(f"-doSaf {pooled_opts['doSaf']}")
         print("echo 'Site allele frequency (SAF) calculation enabled'")
@@ -158,26 +189,18 @@ try:
     if pooled_opts.get('anc'):
         params.append(f"-anc {pooled_opts['anc']}")
     
-    # Output options based on requested format
-    output_format = '${output_format}'
+    # Always enable BCF output if genotype calling is enabled
+    if gl_options.get('doGeno', 0) > 0:
+        params.append("-dobcf 1")
+        print("echo 'BCF output enabled (genotype calling is active)'")
     
-    # Always calculate genotype likelihoods
-    params.append("-doGlf 2")  # Beagle format
-    
-    if output_format in ['vcf', 'all']:
-        params.append("-doVcf 1")
+    # Always add counts and depth
+    if 'doCounts' not in basic:
         params.append("-doCounts 1")
+    if 'doDepth' not in output_opts:
         params.append("-doDepth 1")
-        print("echo 'VCF output enabled'")
     
-    if output_format in ['beagle', 'all']:
-        print("echo 'Beagle genotype likelihood output enabled'")
-    
-    # Add counts and depth for all outputs
-    params.append("-doCounts 1")
-    params.append("-doDepth 1")
-    
-    # Additional output options from config
+    # ========== OUTPUT OPTIONS ==========
     if output_opts.get('dumpCounts'):
         params.append(f"-dumpCounts {output_opts['dumpCounts']}")
     if output_opts.get('doDepth'):
@@ -192,8 +215,6 @@ try:
     if pooled_opts.get('is_pooled', False):
         n_ind = pooled_opts.get('n_individuals_per_pool', None)
         if n_ind:
-            # For pooled samples, we might need to adjust -nInd
-            # This overrides the default (number of BAM files)
             print(f"echo 'Pooled sequencing mode: {n_ind} individuals per pool'")
             params.append(f"-nInd {n_ind}")
     
@@ -201,8 +222,8 @@ except Exception as e:
     print(f"# Error parsing config: {e}", file=sys.stderr)
     print("ANGSD_PARAMS=''")
     print("echo 'WARNING: Failed to parse config file, using minimal defaults'")
-    # Minimal default parameters
-    print("ANGSD_PARAMS='-GL 1 -doGlf 2 -doMajorMinor 1 -doMaf 1 -doCounts 1'")
+    # Minimal default parameters - always output both formats
+    print("ANGSD_PARAMS='-GL 1 -doGlf 2 -doMajorMinor 1 -doMaf 1 -doCounts 1 -doGeno 2 -doPost 1 -dobcf 1'")
 PYTHON_CONFIG
         
         source angsd_params.sh
@@ -212,13 +233,16 @@ PYTHON_CONFIG
         fi
     else
         echo "No config file - using default ANGSD parameters"
-        # Default parameters for basic genotype likelihood calculation
+        # Default parameters - output both Beagle and BCF
         ANGSD_CMD="\$ANGSD_CMD -GL 1"           # SAMtools GL model
         ANGSD_CMD="\$ANGSD_CMD -doGlf 2"        # Output beagle format
         ANGSD_CMD="\$ANGSD_CMD -doMajorMinor 1" # Infer major/minor from GL
         ANGSD_CMD="\$ANGSD_CMD -doMaf 1"        # Calculate allele frequencies
         ANGSD_CMD="\$ANGSD_CMD -doCounts 1"     # Count alleles
         ANGSD_CMD="\$ANGSD_CMD -doDepth 1"      # Calculate depth
+        ANGSD_CMD="\$ANGSD_CMD -doGeno 2"       # Call genotypes
+        ANGSD_CMD="\$ANGSD_CMD -doPost 1"       # Calculate posteriors
+        ANGSD_CMD="\$ANGSD_CMD -dobcf 1"        # Output BCF format
         
         # Basic filters
         ANGSD_CMD="\$ANGSD_CMD -minMapQ 20"
@@ -226,10 +250,6 @@ PYTHON_CONFIG
         ANGSD_CMD="\$ANGSD_CMD -uniqueOnly 1"
         ANGSD_CMD="\$ANGSD_CMD -remove_bads 1"
         ANGSD_CMD="\$ANGSD_CMD -only_proper_pairs 1"
-        
-        if [ "${output_format}" = "vcf" ] || [ "${output_format}" = "all" ]; then
-            ANGSD_CMD="\$ANGSD_CMD -doVcf 1"
-        fi
     fi
     
     # Run ANGSD
