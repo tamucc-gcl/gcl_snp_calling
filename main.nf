@@ -21,7 +21,6 @@ params.reference = "reference.fasta"
 params.num_chunks = 10
 params.output_dir = "results"
 params.output_vcf = "raw_variants.vcf.gz"
-params.output_prefix = "genotypes"
 params.freebayes_config = null
 params.angsd_config = null
 params.bam_filter_config = null
@@ -49,8 +48,9 @@ def helpMessage() {
     Optional parameters:
     --num_chunks        Number of chunks to split genome into (default: 10)
     --output_dir        Output directory (default: "results")
-    --output_vcf        Name of final VCF file (for FreeBayes, default: "raw_variants.vcf.gz")
-    --output_prefix     Output prefix for ANGSD files (default: "genotypes")
+    --output_vcf        Name of output file (default: "raw_variants.vcf.gz")
+                        - FreeBayes: Creates this exact VCF file
+                        - ANGSD: Uses as base name (e.g., "out.vcf.gz" → "out.beagle.gz", "out.mafs.gz")
     --bam_filter_config Path to JSON file containing BAM filter parameters (optional)
     
     FreeBayes-specific:
@@ -69,11 +69,25 @@ def helpMessage() {
     # Run with ANGSD for genotype likelihoods
     nextflow run main.nf --bams "*.bam" --reference genome.fa --genotyper angsd
     
-    # Run ANGSD with custom config and VCF output
+    # Run ANGSD with custom config and consistent naming
     nextflow run main.nf --bams "*.bam" --reference genome.fa \\
         --genotyper angsd \\
         --angsd_config angsd_parameters.json \\
-        --angsd_output_format vcf
+        --output_vcf "my_project.vcf.gz"
+    # Creates: my_project.beagle.gz, my_project.mafs.gz, etc.
+    
+    # Run FreeBayes with same naming
+    nextflow run main.nf --bams "*.bam" --reference genome.fa \\
+        --genotyper freebayes \\
+        --output_vcf "my_project.vcf.gz"
+    # Creates: my_project.vcf.gz
+    
+    # ANGSD with VCF output only
+    nextflow run main.nf --bams "*.bam" --reference genome.fa \\
+        --genotyper angsd \\
+        --angsd_output_format vcf \\
+        --output_vcf "only_vcf.vcf.gz"
+    # Creates: only_vcf.vcf.gz (VCF format only, no beagle)
     
     """.stripIndent()
 }
@@ -90,6 +104,10 @@ if (!params.bams || !params.reference) {
 }
 
 workflow {
+    // Derive output prefix from output_vcf parameter
+    // Remove .vcf.gz or .vcf extensions to get base name
+    def output_prefix = params.output_vcf.replaceAll(/\.(vcf|VCF)(\.gz)?$/, "")
+    
     log.info "================================================================"
     log.info "Parallel Genotyping Pipeline"
     log.info "================================================================"
@@ -104,7 +122,7 @@ workflow {
         log.info "FreeBayes config:  ${params.freebayes_config ?: 'Using default parameters'}"
         log.info "Ploidy map:        ${params.ploidy_map ?: 'Using global ploidy from config or default'}"
     } else if (params.genotyper == "angsd") {
-        log.info "Output prefix:     ${params.output_prefix}"
+        log.info "Output base name:  ${output_prefix}"
         log.info "ANGSD config:      ${params.angsd_config ?: 'Using default parameters'}"
         log.info "Sites file:        ${params.sites_file ?: 'None - will discover sites'}"
         log.info "Output format:     ${params.angsd_output_format}"
@@ -266,7 +284,7 @@ workflow {
         // Combine ANGSD outputs
         COMBINE_ANGSD(
             all_angsd_files,
-            Channel.value(params.output_prefix),
+            Channel.value(output_prefix),
             Channel.value(params.angsd_output_format)
         )
         
@@ -283,6 +301,9 @@ workflow {
 }
 
 workflow.onComplete {
+    // Derive output prefix for completion message
+    def output_prefix = params.output_vcf.replaceAll(/\.(vcf|VCF)(\.gz)?$/, "")
+    
     log.info "================================================================"
     log.info "Pipeline Summary"
     log.info "================================================================"
@@ -300,12 +321,12 @@ workflow.onComplete {
             log.info "Final VCF file: ${params.output_dir}/${params.output_vcf}"
         } else if (params.genotyper == "angsd") {
             log.info "ANGSD outputs:"
-            log.info "- Genotype likelihoods: ${params.output_dir}/${params.output_prefix}.beagle.gz"
-            log.info "- Allele frequencies: ${params.output_dir}/${params.output_prefix}.mafs.gz"
+            log.info "- Genotype likelihoods: ${params.output_dir}/${output_prefix}.beagle.gz"
+            log.info "- Allele frequencies: ${params.output_dir}/${output_prefix}.mafs.gz"
             if (params.angsd_output_format == "vcf" || params.angsd_output_format == "all") {
-                log.info "- VCF file: ${params.output_dir}/${params.output_prefix}.vcf.gz"
+                log.info "- VCF file: ${params.output_dir}/${output_prefix}.vcf.gz"
             }
-            log.info "- Summary: ${params.output_dir}/${params.output_prefix}_summary.txt"
+            log.info "- Summary: ${params.output_dir}/${output_prefix}_summary.txt"
         }
         
         log.info ""

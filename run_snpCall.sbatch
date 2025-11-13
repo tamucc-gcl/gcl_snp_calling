@@ -27,7 +27,7 @@ OPTIONS:
     -p, --ploidy-map <FILE>       Ploidy map file (FreeBayes only, optional)
     -s, --sites <FILE>            Sites file for targeted analysis (ANGSD only, optional)
     -f, --format <STRING>         ANGSD output format: beagle/vcf/all (default: all, ANGSD only)
-    -o, --output <STRING>         Output name prefix (default: depends on genotyper)
+    -o, --output <STRING>         Output VCF name (used as base name for ANGSD outputs)
     -h, --help                    Show this help message
 
 EXAMPLES:
@@ -37,14 +37,18 @@ EXAMPLES:
     # FreeBayes with custom config and ploidy map
     sbatch run_snpCall.sbatch -g freebayes -c freebayes_params.json -p ploidy_map.txt
 
-    # ANGSD for individual samples
+    # ANGSD for individual samples (uses default output name)
     sbatch run_snpCall.sbatch -g angsd -c angsd_parameters.json
 
-    # ANGSD for pooled samples
-    sbatch run_snpCall.sbatch -g angsd -c angsd_pooled_parameters.json -n 100
+    # ANGSD for pooled samples with custom output name
+    sbatch run_snpCall.sbatch -g angsd -c angsd_pooled_parameters.json -n 100 -o pooled.vcf.gz
 
     # ANGSD with sites file for targeted analysis
     sbatch run_snpCall.sbatch -g angsd -c angsd_parameters.json -s high_quality_sites.txt
+
+    # Both genotypers with same output base name
+    sbatch run_snpCall.sbatch -g freebayes -o my_project.vcf.gz  # Creates: my_project.vcf.gz
+    sbatch run_snpCall.sbatch -g angsd -o my_project.vcf.gz      # Creates: my_project.beagle.gz, etc.
 
 LEGACY USAGE (still supported):
     sbatch run_snpCall.sbatch <freebayes_params> <bam_filter_params> <nChunks> [ploidy_map]
@@ -61,7 +65,7 @@ N_CHUNKS="50"
 PLOIDY_MAP=""
 SITES_FILE=""
 OUTPUT_FORMAT="all"
-OUTPUT_NAME=""
+OUTPUT_VCF="raw_variants.vcf.gz"  # Default output name for both genotypers
 
 # Check if using legacy format (positional arguments)
 if [[ $# -gt 0 && "$1" != "-"* ]]; then
@@ -73,6 +77,7 @@ if [[ $# -gt 0 && "$1" != "-"* ]]; then
     N_CHUNKS="${3:-50}"
     PLOIDY_MAP="${4:-}"
     GENOTYPER="freebayes"
+    OUTPUT_VCF="raw_variants.vcf.gz"  # Use default for legacy format
     
     echo "Legacy parameters interpreted as:"
     echo "  FreeBayes config: ${CONFIG_FILE}"
@@ -125,7 +130,7 @@ else
                 shift 2
                 ;;
             -o|--output)
-                OUTPUT_NAME="$2"
+                OUTPUT_VCF="$2"
                 shift 2
                 ;;
             -h|--help)
@@ -158,14 +163,8 @@ if [ -z "${CONFIG_FILE}" ]; then
     fi
 fi
 
-# Set default output names
-if [ -z "${OUTPUT_NAME}" ]; then
-    if [ "${GENOTYPER}" = "freebayes" ]; then
-        OUTPUT_NAME="raw_variants.vcf.gz"
-    else
-        OUTPUT_NAME="genotypes"
-    fi
-fi
+# Derive output prefix for ANGSD from OUTPUT_VCF
+OUTPUT_PREFIX=$(echo "${OUTPUT_VCF}" | sed 's/\.\(vcf\|VCF\)\(\.gz\)\?$//')
 
 # Print configuration summary
 echo "================================================================"
@@ -175,6 +174,10 @@ echo "Genotyper:         ${GENOTYPER}"
 echo "Config file:       ${CONFIG_FILE}"
 echo "BAM filter config: ${BAM_FILTER}"
 echo "Number of chunks:  ${N_CHUNKS}"
+echo "Output VCF name:   ${OUTPUT_VCF}"
+if [ "${GENOTYPER}" = "angsd" ]; then
+    echo "Output prefix:     ${OUTPUT_PREFIX} (derived from VCF name)"
+fi
 
 if [ -f "${CONFIG_FILE}" ]; then
     echo ""
@@ -201,6 +204,7 @@ CMD="${CMD} --reference './genome/genome.fa'"
 CMD="${CMD} --genotyper ${GENOTYPER}"
 CMD="${CMD} --num_chunks ${N_CHUNKS}"
 CMD="${CMD} --output_dir 'results'"
+CMD="${CMD} --output_vcf '${OUTPUT_VCF}'"  # Used for both genotypers
 
 # Add BAM filter config if it exists
 if [ -f "${BAM_FILTER}" ]; then
@@ -218,9 +222,7 @@ if [ "${GENOTYPER}" = "freebayes" ]; then
         CMD="${CMD} --freebayes_config ${CONFIG_FILE}"
     fi
     
-    # Add output VCF name
-    CMD="${CMD} --output_vcf '${OUTPUT_NAME}'"
-    echo "Output VCF: ${OUTPUT_NAME}"
+    echo "Output VCF: ${OUTPUT_VCF}"
     
     # Add ploidy map if provided
     if [ -n "${PLOIDY_MAP}" ] && [ -f "${PLOIDY_MAP}" ]; then
@@ -251,9 +253,7 @@ elif [ "${GENOTYPER}" = "angsd" ]; then
         fi
     fi
     
-    # Add output prefix
-    CMD="${CMD} --output_prefix '${OUTPUT_NAME}'"
-    echo "Output prefix: ${OUTPUT_NAME}"
+    echo "Output base name: ${OUTPUT_PREFIX}"
     
     # Add output format
     CMD="${CMD} --angsd_output_format ${OUTPUT_FORMAT}"
@@ -272,14 +272,14 @@ elif [ "${GENOTYPER}" = "angsd" ]; then
     echo ""
     echo "Expected output files:"
     if [[ "${OUTPUT_FORMAT}" == "all" || "${OUTPUT_FORMAT}" == "beagle" ]]; then
-        echo "  - ${OUTPUT_NAME}.beagle.gz (genotype likelihoods)"
-        echo "  - ${OUTPUT_NAME}.mafs.gz (allele frequencies)"
+        echo "  - ${OUTPUT_PREFIX}.beagle.gz (genotype likelihoods)"
+        echo "  - ${OUTPUT_PREFIX}.mafs.gz (allele frequencies)"
     fi
     if [[ "${OUTPUT_FORMAT}" == "all" || "${OUTPUT_FORMAT}" == "vcf" ]]; then
-        echo "  - ${OUTPUT_NAME}.vcf.gz (VCF format)"
+        echo "  - ${OUTPUT_PREFIX}.vcf.gz (VCF format)"
     fi
-    echo "  - ${OUTPUT_NAME}.sites (positions file)"
-    echo "  - ${OUTPUT_NAME}_summary.txt (run summary)"
+    echo "  - ${OUTPUT_PREFIX}.sites (positions file)"
+    echo "  - ${OUTPUT_PREFIX}_summary.txt (run summary)"
 fi
 
 echo ""
@@ -305,13 +305,13 @@ if [ ${EXIT_CODE} -eq 0 ]; then
     echo "Results location: ./results/"
     
     if [ "${GENOTYPER}" = "freebayes" ]; then
-        echo "Main output: ./results/${OUTPUT_NAME}"
+        echo "Main output: ./results/${OUTPUT_VCF}"
     else
         echo "Main outputs:"
-        echo "  - ./results/${OUTPUT_NAME}.beagle.gz"
-        echo "  - ./results/${OUTPUT_NAME}.mafs.gz"
+        echo "  - ./results/${OUTPUT_PREFIX}.beagle.gz"
+        echo "  - ./results/${OUTPUT_PREFIX}.mafs.gz"
         if [[ "${OUTPUT_FORMAT}" == "all" || "${OUTPUT_FORMAT}" == "vcf" ]]; then
-            echo "  - ./results/${OUTPUT_NAME}.vcf.gz"
+            echo "  - ./results/${OUTPUT_PREFIX}.vcf.gz"
         fi
     fi
     
