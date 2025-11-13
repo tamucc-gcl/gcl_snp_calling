@@ -5,65 +5,100 @@
   "basic_options": {
     "comment": "Basic filtering and data handling options",
     "remove_bads": 1,
+    "comment_remove_bads": "1=Remove reads with FLAG issues (unmapped, duplicates, QC fail)",
     "unique_only": 1,
+    "comment_unique_only": "1=Only use uniquely mapping reads (remove multi-mappers)",
     "only_proper_pairs": 1,
+    "comment_only_proper_pairs": "1=Only use properly paired reads for paired-end data",
     "trim": 0,
+    "comment_trim": "Number of bases to trim from start/end of reads",
     "C": 50,
+    "comment_C": "Adjust base quality for excessive mismatches (50=default penalty)",
     "baq": 1,
-    "checkBamHeaders": 1
+    "comment_baq": "1=Enable BAQ (Base Alignment Quality) computation to reduce false SNPs near indels",
+    "checkBamHeaders": 1,
+    "comment_checkBamHeaders": "1=Verify all BAM headers are compatible",
+    "doCounts": 1,
+    "comment_doCounts": "1=Count alleles at each site (required for most downstream analyses)"
   },
   
   "filters": {
     "comment": "Quality and depth filters",
     "minQ": 20,
+    "comment_minQ": "Minimum base quality score (Phred scale, 20=99% accuracy)",
     "minMapQ": 20,
+    "comment_minMapQ": "Minimum mapping quality score (20=99% confidence in mapping position)",
     "minInd": 1,
+    "comment_minInd": "Minimum number of individuals required to have data at a site",
     "setMinDepth": -1,
+    "comment_setMinDepth": "Minimum total depth across all samples (-1=disabled)",
     "setMaxDepth": -1,
+    "comment_setMaxDepth": "Maximum total depth to avoid repetitive regions (-1=disabled)",
     "setMinDepthInd": 1,
-    "setMaxDepthInd": 100
+    "comment_setMinDepthInd": "Minimum reads per individual to include them at a site",
+    "setMaxDepthInd": 100,
+    "comment_setMaxDepthInd": "Maximum reads per individual to avoid PCR duplicates/errors"
   },
   
   "genotype_likelihoods": {
     "comment": "Genotype likelihood calculation options",
-    "GL": 1,
-    "comment_GL": "1=SAMtools, 2=GATK, 3=SOAPsnp, 4=SYK",
+    "GL": 2,
+    "comment_GL": "Genotype likelihood model: 1=SAMtools, 2=GATK, 3=SOAPsnp, 4=SYK",
     "doGlf": 2,
-    "comment_doGlf": "1=binary glf, 2=beagle, 3=binary 3 times, 4=text",
-    "doGeno": 0,
-    "comment_doGeno": "1=write major/minor, 2=write actual genotypes",
-    "doPost": 0,
-    "comment_doPost": "1=estimate posterior genotype prob using HWE, 2=using allele freq"
+    "comment_doGlf": "Output format: 1=binary glf, 2=beagle text, 3=binary 3 times, 4=text",
+    "doGeno": 19,
+    "comment_doGeno": "Genotype calling: 0=none, 1=write major/minor, 2=write AA/Aa/aa, 3-9=various formats",
+    "doPost": 1,
+    "comment_doPost": "Posterior genotype probability: 0=none, 1=use HWE prior, 2=use estimated allele freq",
+    "geno_minDepth": 5,
+    "comment_geno_minDepth": "Minimum depth required to call a genotype (only used when doGeno>0)",
+    "geno_minMM": 0.1,
+    "comment_geno_minMM": "Minimum posterior probability to call a genotype (0.1=10% confidence threshold)"
   },
   
   "snp_calling": {
     "comment": "SNP discovery and filtering options",
     "doMajorMinor": 1,
-    "comment_doMajorMinor": "1=GL, 2=allele counts, 3=ref, 4=ancestral, 5=effective major/minor",
-    "doMaf": 1,
-    "comment_doMaf": "1=freq known major/minor, 2=freq ancestral",
+    "comment_doMajorMinor": "How to infer major/minor alleles: 1=from GL, 2=from counts, 3=use reference, 4=use ancestral, 5=effective major/minor",
+    "doMaf": 3,
+    "comment_doMaf": "Calculate allele frequencies: 0=none, 1=known major/minor, 2=known ancestral, 3=EM algorithm",
     "SNP_pval": 1e-6,
-    "rmTriallelic": 1,
+    "comment_SNP_pval": "P-value threshold for SNP calling (1e-6 = standard, 1=no filtering)",
+    "rmTriallelic": 0,
+    "comment_rmTriallelic": "1=Remove sites with >2 alleles (recommended for diploid organisms)",
+    "skipTriallelic": 1,
+    "comment_skipTriallelic": "1=Skip processing of tri-allelic sites entirely (faster than rmTriallelic)",
     "minMaf": 0.01,
-    "minLRT": -1
+    "comment_minMaf": "Minimum minor allele frequency to keep a site (0.01=1%)",
+    "minLRT": -1,
+    "comment_minLRT": "Minimum likelihood ratio test score for SNP (-1=disabled)"
   },
   
   "pooled_sequencing": {
     "comment": "Options specific to pooled samples",
     "is_pooled": false,
+    "comment_is_pooled": "Set to true if analyzing pooled samples",
     "n_individuals_per_pool": null,
+    "comment_n_individuals_per_pool": "Number of individuals per pool (for pooled sequencing)",
     "doSaf": 0,
-    "comment_doSaf": "1=sample allele freq likelihood, 2=SFS per site",
+    "comment_doSaf": "Site allele frequency likelihood: 0=none, 1=calculate SAF, 2=calculate SFS",
     "fold": 0,
-    "anc": null
+    "comment_fold": "1=Fold the spectrum (use when no ancestral state available)",
+    "anc": null,
+    "comment_anc": "Path to ancestral sequence file (for unfolded SFS)"
   },
   
   "output_options": {
     "comment": "Additional output control",
     "dumpCounts": 0,
+    "comment_dumpCounts": "Output allele counts: 0=none, 1=total counts, 2=counts per sample, 3=both",
     "doDepth": 1,
+    "comment_doDepth": "1=Calculate and output depth statistics",
     "maxDepth": 1000,
+    "comment_maxDepth": "Maximum depth for statistics calculations",
     "doVcf": 0,
-    "comment_doVcf": "Set to 1 to output VCF format"
+    "comment_doVcf": "1=Output VCF/BCF format (requires doMaf, doPost, or doGeno)",
+    "dobcf":1,
+    "comment_dobcf": "1=Output BCF format (binary VCF, more efficient than text VCF)"
   }
 }
