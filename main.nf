@@ -6,7 +6,9 @@ nextflow.enable.dsl = 2
 include { CREATE_CHUNKS } from './modules/create_chunks'
 include { FILTER_BAMS } from './modules/filter_bams'
 include { FREEBAYES_CHUNK } from './modules/freebayes_chunk'
+include { ANGSD_CHUNK } from './modules/angsd_chunk'
 include { COMBINE_VCFS } from './modules/combine_vcfs'
+include { COMBINE_ANGSD } from './modules/combine_angsd'
 include { SUMMARIZE_VCFS } from './modules/summarize_vcfs'
 include { samtools_stats as SAMTOOLS_STATS_RAW } from './modules/samtools_stats'
 include { samtools_stats as SAMTOOLS_STATS_FILTERED } from './modules/samtools_stats'
@@ -19,30 +21,59 @@ params.reference = "reference.fasta"
 params.num_chunks = 10
 params.output_dir = "results"
 params.output_vcf = "raw_variants.vcf.gz"
+params.output_prefix = "genotypes"
 params.freebayes_config = null
+params.angsd_config = null
 params.bam_filter_config = null
 params.ploidy_map = null
+params.sites_file = null
+params.genotyper = "freebayes"  // "freebayes" or "angsd"
+params.angsd_output_format = "all"  // "beagle", "vcf", "glf", or "all"
 
 def helpMessage() {
     log.info"""
     ================================================================
-    Parallel Freebayes Variant Calling Pipeline
+    Parallel Genotyping Pipeline (FreeBayes/ANGSD)
     ================================================================
     
     Usage:
-    nextflow run pipeline.nf --bams "path/to/*.bam" --reference "reference.fasta"
+    nextflow run main.nf --bams "path/to/*.bam" --reference "reference.fasta"
     
     Required parameters:
-    --bams          Path to BAM files (glob pattern, e.g., "*.bam")
-    --reference     Path to reference genome FASTA file
+    --bams              Path to BAM files (glob pattern, e.g., "*.bam")
+    --reference         Path to reference genome FASTA file
+    
+    Genotyping method:
+    --genotyper         Choose genotyping method: "freebayes" or "angsd" (default: "freebayes")
     
     Optional parameters:
     --num_chunks        Number of chunks to split genome into (default: 10)
     --output_dir        Output directory (default: "results")
-    --output_vcf        Name of final combined VCF file (default: "raw_variants.vcf.gz")
-    --freebayes_config  Path to JSON file containing freebayes parameters (optional)
+    --output_vcf        Name of final VCF file (for FreeBayes, default: "raw_variants.vcf.gz")
+    --output_prefix     Output prefix for ANGSD files (default: "genotypes")
     --bam_filter_config Path to JSON file containing BAM filter parameters (optional)
+    
+    FreeBayes-specific:
+    --freebayes_config  Path to JSON file containing FreeBayes parameters (optional)
     --ploidy_map        Path to file mapping BAM files to ploidy values (optional)
+    
+    ANGSD-specific:
+    --angsd_config      Path to JSON file containing ANGSD parameters (optional)
+    --sites_file        Path to sites file for ANGSD (optional, for targeted analysis)
+    --angsd_output_format Output format for ANGSD: "beagle", "vcf", "glf", or "all" (default: "all")
+    
+    Examples:
+    # Run with FreeBayes (default)
+    nextflow run main.nf --bams "*.bam" --reference genome.fa
+    
+    # Run with ANGSD for genotype likelihoods
+    nextflow run main.nf --bams "*.bam" --reference genome.fa --genotyper angsd
+    
+    # Run ANGSD with custom config and VCF output
+    nextflow run main.nf --bams "*.bam" --reference genome.fa \\
+        --genotyper angsd \\
+        --angsd_config angsd_parameters.json \\
+        --angsd_output_format vcf
     
     """.stripIndent()
 }
@@ -60,16 +91,29 @@ if (!params.bams || !params.reference) {
 
 workflow {
     log.info "================================================================"
-    log.info "Parallel Freebayes Variant Calling Pipeline"
+    log.info "Parallel Genotyping Pipeline"
     log.info "================================================================"
+    log.info "Genotyper:         ${params.genotyper}"
     log.info "BAM files:         ${params.bams}"
     log.info "Reference:         ${params.reference}"
     log.info "Number of chunks:  ${params.num_chunks}"
     log.info "Output directory:  ${params.output_dir}"
-    log.info "Output VCF:        ${params.output_vcf}"
-    log.info "Freebayes config:  ${params.freebayes_config ?: 'Using default parameters'}"
+    
+    if (params.genotyper == "freebayes") {
+        log.info "Output VCF:        ${params.output_vcf}"
+        log.info "FreeBayes config:  ${params.freebayes_config ?: 'Using default parameters'}"
+        log.info "Ploidy map:        ${params.ploidy_map ?: 'Using global ploidy from config or default'}"
+    } else if (params.genotyper == "angsd") {
+        log.info "Output prefix:     ${params.output_prefix}"
+        log.info "ANGSD config:      ${params.angsd_config ?: 'Using default parameters'}"
+        log.info "Sites file:        ${params.sites_file ?: 'None - will discover sites'}"
+        log.info "Output format:     ${params.angsd_output_format}"
+    } else {
+        log.error "ERROR: Invalid genotyper '${params.genotyper}'. Must be 'freebayes' or 'angsd'"
+        exit 1
+    }
+    
     log.info "BAM filter config: ${params.bam_filter_config ?: 'Using default parameters'}"
-    log.info "Ploidy map:        ${params.ploidy_map ?: 'Using global ploidy from config or default'}"
     log.info "================================================================"
     
     // Create value channels for reference files
@@ -81,18 +125,6 @@ workflow {
         bam_filter_config_ch = Channel.fromPath(params.bam_filter_config, checkIfExists: true).first()
     } else {
         bam_filter_config_ch = Channel.value(file('NO_FILE'))
-    }
-    
-    if (params.ploidy_map) {
-        ploidy_map_ch = Channel.fromPath(params.ploidy_map, checkIfExists: true).first()
-    } else {
-        ploidy_map_ch = Channel.value(file('NO_FILE'))
-    }
-    
-    if (params.freebayes_config) {
-        config_ch = Channel.fromPath(params.freebayes_config, checkIfExists: true).first()
-    } else {
-        config_ch = Channel.value([])
     }
     
     // Simple channel pattern that caches properly
@@ -141,15 +173,15 @@ workflow {
         
         MULTIQC_FILTERED_BAMS(filtered_stats_files, Channel.value('filtered_bams'))
         
-        // Collect for FreeBayes
+        // Collect for genotyping
         bam_files_ch = filtered_bams.map { bam, bai -> bam }.collect()
         bai_files_ch = filtered_bams.map { bam, bai -> bai }.collect()
         
     } else {
         // Use raw BAMs
-        raw_for_freebayes = Channel.fromPath(params.bams, checkIfExists: true)
-        bam_files_ch = raw_for_freebayes.collect()
-        bai_files_ch = raw_for_freebayes.map { bam -> file("${bam}.bai") }.collect()
+        raw_for_genotyping = Channel.fromPath(params.bams, checkIfExists: true)
+        bam_files_ch = raw_for_genotyping.collect()
+        bai_files_ch = raw_for_genotyping.map { bam -> file("${bam}.bai") }.collect()
     }
     
     // Step 1: Create genome chunks
@@ -168,23 +200,86 @@ workflow {
         }
         .filter { it != null }
     
-    // Step 3: Run freebayes on each chunk
-    vcf_chunks = FREEBAYES_CHUNK(
-        chunk_ch,
-        reference_ch,
-        reference_fai_ch,
-        bam_files_ch,
-        bai_files_ch,
-        config_ch,
-        ploidy_map_ch
-    )
-    
-    // Step 4: Combine VCFs
-    all_vcfs = vcf_chunks.map { chunk_id, vcf -> vcf }.collect()
-    COMBINE_VCFS(all_vcfs, params.output_vcf)
-    
-    // Step 5: Summarize final VCF
-    SUMMARIZE_VCFS(COMBINE_VCFS.out.vcf, ploidy_map_ch)
+    // Step 3: Run genotyping based on selected method
+    if (params.genotyper == "freebayes") {
+        // FreeBayes workflow
+        if (params.ploidy_map) {
+            ploidy_map_ch = Channel.fromPath(params.ploidy_map, checkIfExists: true).first()
+        } else {
+            ploidy_map_ch = Channel.value(file('NO_FILE'))
+        }
+        
+        if (params.freebayes_config) {
+            config_ch = Channel.fromPath(params.freebayes_config, checkIfExists: true).first()
+        } else {
+            config_ch = Channel.value([])
+        }
+        
+        vcf_chunks = FREEBAYES_CHUNK(
+            chunk_ch,
+            reference_ch,
+            reference_fai_ch,
+            bam_files_ch,
+            bai_files_ch,
+            config_ch,
+            ploidy_map_ch
+        )
+        
+        // Step 4: Combine VCFs
+        all_vcfs = vcf_chunks.map { chunk_id, vcf -> vcf }.collect()
+        COMBINE_VCFS(all_vcfs, params.output_vcf)
+        
+        // Step 5: Summarize final VCF
+        SUMMARIZE_VCFS(COMBINE_VCFS.out.vcf, ploidy_map_ch)
+        
+    } else if (params.genotyper == "angsd") {
+        // ANGSD workflow
+        if (params.angsd_config) {
+            angsd_config_ch = Channel.fromPath(params.angsd_config, checkIfExists: true).first()
+        } else {
+            angsd_config_ch = Channel.value([])
+        }
+        
+        if (params.sites_file) {
+            sites_file_ch = Channel.fromPath(params.sites_file, checkIfExists: true).first()
+        } else {
+            sites_file_ch = Channel.value(file('NO_FILE'))
+        }
+        
+        angsd_chunks = ANGSD_CHUNK(
+            chunk_ch,
+            reference_ch,
+            reference_fai_ch,
+            bam_files_ch,
+            bai_files_ch,
+            angsd_config_ch,
+            sites_file_ch,
+            Channel.value(params.angsd_output_format)
+        )
+        
+        // Collect all chunk output files
+        all_angsd_files = angsd_chunks.chunk_files
+            .map { chunk_id, files -> files }
+            .flatten()
+            .collect()
+        
+        // Combine ANGSD outputs
+        COMBINE_ANGSD(
+            all_angsd_files,
+            Channel.value(params.output_prefix),
+            Channel.value(params.angsd_output_format)
+        )
+        
+        // Optional: If VCF output is generated, run summarize
+        if (params.angsd_output_format == "vcf" || params.angsd_output_format == "all") {
+            if (params.ploidy_map) {
+                ploidy_map_ch = Channel.fromPath(params.ploidy_map, checkIfExists: true).first()
+            } else {
+                ploidy_map_ch = Channel.value(file('NO_FILE'))
+            }
+            SUMMARIZE_VCFS(COMBINE_ANGSD.out.vcf, ploidy_map_ch)
+        }
+    }
 }
 
 workflow.onComplete {
@@ -200,18 +295,29 @@ workflow.onComplete {
     if (workflow.success) {
         log.info ""
         log.info "Results are available in: ${params.output_dir}/"
-        log.info "Final VCF file: ${params.output_dir}/${params.output_vcf}"
+        
+        if (params.genotyper == "freebayes") {
+            log.info "Final VCF file: ${params.output_dir}/${params.output_vcf}"
+        } else if (params.genotyper == "angsd") {
+            log.info "ANGSD outputs:"
+            log.info "- Genotype likelihoods: ${params.output_dir}/${params.output_prefix}.beagle.gz"
+            log.info "- Allele frequencies: ${params.output_dir}/${params.output_prefix}.mafs.gz"
+            if (params.angsd_output_format == "vcf" || params.angsd_output_format == "all") {
+                log.info "- VCF file: ${params.output_dir}/${params.output_prefix}.vcf.gz"
+            }
+            log.info "- Summary: ${params.output_dir}/${params.output_prefix}_summary.txt"
+        }
+        
         log.info ""
         log.info "QC Reports:"
         log.info "- Raw BAMs MultiQC: ${params.output_dir}/multiqc_reports/multiqc_raw_bams.html"
         if (params.bam_filter_config) {
             log.info "- Filtered BAMs MultiQC: ${params.output_dir}/multiqc_reports/multiqc_filtered_bams.html"
         }
+        
         log.info ""
         log.info "Pipeline used exactly ${params.num_chunks} chunks with complete genome coverage"
-        if (params.ploidy_map) {
-            log.info "Used per-BAM ploidy values from: ${params.ploidy_map}"
-        }
+        
     } else {
         log.info ""
         log.info "Pipeline failed. Check the error messages above."

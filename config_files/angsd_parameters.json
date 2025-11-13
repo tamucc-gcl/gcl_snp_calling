@@ -1,0 +1,69 @@
+{
+  "comment": "ANGSD configuration for SNP calling and genotype likelihood calculation",
+  "comment_usage": "Parameters organized by ANGSD functional groups",
+  
+  "basic_options": {
+    "comment": "Basic filtering and data handling options",
+    "remove_bads": 1,
+    "unique_only": 1,
+    "only_proper_pairs": 1,
+    "trim": 0,
+    "C": 50,
+    "baq": 1,
+    "checkBamHeaders": 1
+  },
+  
+  "filters": {
+    "comment": "Quality and depth filters",
+    "minQ": 20,
+    "minMapQ": 20,
+    "minInd": 1,
+    "setMinDepth": -1,
+    "setMaxDepth": -1,
+    "setMinDepthInd": 1,
+    "setMaxDepthInd": 100
+  },
+  
+  "genotype_likelihoods": {
+    "comment": "Genotype likelihood calculation options",
+    "GL": 1,
+    "comment_GL": "1=SAMtools, 2=GATK, 3=SOAPsnp, 4=SYK",
+    "doGlf": 2,
+    "comment_doGlf": "1=binary glf, 2=beagle, 3=binary 3 times, 4=text",
+    "doGeno": 0,
+    "comment_doGeno": "1=write major/minor, 2=write actual genotypes",
+    "doPost": 0,
+    "comment_doPost": "1=estimate posterior genotype prob using HWE, 2=using allele freq"
+  },
+  
+  "snp_calling": {
+    "comment": "SNP discovery and filtering options",
+    "doMajorMinor": 1,
+    "comment_doMajorMinor": "1=GL, 2=allele counts, 3=ref, 4=ancestral, 5=effective major/minor",
+    "doMaf": 1,
+    "comment_doMaf": "1=freq known major/minor, 2=freq ancestral",
+    "SNP_pval": 1e-6,
+    "rmTriallelic": 1,
+    "minMaf": 0.01,
+    "minLRT": -1
+  },
+  
+  "pooled_sequencing": {
+    "comment": "Options specific to pooled samples",
+    "is_pooled": false,
+    "n_individuals_per_pool": null,
+    "doSaf": 0,
+    "comment_doSaf": "1=sample allele freq likelihood, 2=SFS per site",
+    "fold": 0,
+    "anc": null
+  },
+  
+  "output_options": {
+    "comment": "Additional output control",
+    "dumpCounts": 0,
+    "doDepth": 1,
+    "maxDepth": 1000,
+    "doVcf": 0,
+    "comment_doVcf": "Set to 1 to output VCF format"
+  }
+}
