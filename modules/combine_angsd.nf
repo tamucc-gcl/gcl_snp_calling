@@ -7,23 +7,22 @@ process COMBINE_ANGSD {
     input:
     path chunk_files  // All chunk output files
     val output_prefix
-    val output_format
     
     output:
-    path "${output_prefix}.beagle.gz", emit: beagle, optional: true
-    path "${output_prefix}.mafs.gz", emit: mafs, optional: true
-    path "${output_prefix}.vcf.gz", emit: vcf, optional: true
-    path "${output_prefix}.vcf.gz.tbi", emit: vcf_index, optional: true
+    path "${output_prefix}.beagle.gz", emit: beagle
+    path "${output_prefix}.mafs.gz", emit: mafs
+    path "${output_prefix}.vcf.gz", emit: vcf
+    path "${output_prefix}.vcf.gz.tbi", emit: vcf_index
     path "${output_prefix}.sites", emit: sites
     path "${output_prefix}_summary.txt", emit: summary
     
     script:
     """
     echo "Combining ANGSD outputs"
-    echo "Output format: ${output_format}"
     echo "Output prefix: ${output_prefix}"
+    echo "Processing both Beagle and BCF/VCF formats"
     
-    # Sort chunk files by number
+    # Sort chunk files by number for Beagle files
     for file in ${chunk_files.join(' ')}; do
         if [[ \$file == *".beagle.gz" ]]; then
             # Extract chunk number from filename
@@ -32,7 +31,7 @@ process COMBINE_ANGSD {
         fi
     done | sort -n > beagle_files.txt
     
-    # Check if we have any beagle files
+    # Combine beagle files (genotype likelihoods)
     if [ -s beagle_files.txt ]; then
         echo "Found beagle files to combine:"
         cat beagle_files.txt
@@ -40,7 +39,6 @@ process COMBINE_ANGSD {
         # Extract just filenames
         cut -f2 beagle_files.txt > beagle_list.txt
         
-        # Combine beagle files (genotype likelihoods)
         echo "Combining genotype likelihood files..."
         
         # Get header from first file
@@ -55,15 +53,14 @@ process COMBINE_ANGSD {
         # Compress final beagle file
         bgzip ${output_prefix}.beagle
         
-        # Count total sites
         TOTAL_SITES=\$(zcat ${output_prefix}.beagle.gz | tail -n +2 | wc -l)
         echo "Total sites with genotype likelihoods: \$TOTAL_SITES"
     else
-        echo "No beagle files found to combine"
-        touch ${output_prefix}.beagle.gz
+        echo "ERROR: No beagle files found to combine"
+        exit 1
     fi
     
-    # Combine MAF files if they exist
+    # Combine MAF files
     echo "Checking for MAF files..."
     ls chunk_*.mafs.gz 2>/dev/null | sort -V > maf_files.txt || true
     
@@ -84,39 +81,64 @@ process COMBINE_ANGSD {
         TOTAL_MAFS=\$(zcat ${output_prefix}.mafs.gz | tail -n +2 | wc -l)
         echo "Total sites in MAF file: \$TOTAL_MAFS"
     else
-        echo "No MAF files found"
-        touch ${output_prefix}.mafs.gz
+        echo "No MAF files found - creating empty file"
+        echo "chromo\tposition\tmajor\tminor\tref\tanc\tknownEM\tnInd" | bgzip > ${output_prefix}.mafs.gz
     fi
     
-    # Handle VCF output if requested
-    if [ "${output_format}" = "vcf" ] || [ "${output_format}" = "all" ]; then
-        echo "Processing VCF files..."
+    # Handle BCF files and convert to VCF
+    echo "Processing BCF files..."
+    
+    # Sort BCF files by chunk number
+    for file in chunk_*.bcf; do
+        if [ -f "\$file" ]; then
+            chunk_num=\$(echo \$file | sed 's/.*chunk_\\([0-9]*\\).*/\\1/')
+            printf "%05d\\t%s\\n" "\$chunk_num" "\$file"
+        fi
+    done | sort -n > bcf_files.txt
+    
+    if [ -s bcf_files.txt ]; then
+        echo "Found BCF files to combine:"
+        cat bcf_files.txt
         
-        # Sort VCF files by chunk number
-        for file in chunk_*.vcf.gz; do
-            if [ -f "\$file" ]; then
-                chunk_num=\$(echo \$file | sed 's/.*chunk_\\([0-9]*\\).*/\\1/')
-                printf "%05d\\t%s\\n" "\$chunk_num" "\$file"
-            fi
-        done | sort -n > vcf_files.txt
+        cut -f2 bcf_files.txt > bcf_list.txt
+        
+        # Combine BCFs using bcftools
+        echo "Concatenating BCF files..."
+        bcftools concat \\
+            --file-list bcf_list.txt \\
+            --output-type b \\
+            --output combined.bcf
+        
+        # Convert BCF to VCF
+        echo "Converting BCF to compressed VCF..."
+        bcftools view \\
+            --output-type z \\
+            --output ${output_prefix}.vcf.gz \\
+            combined.bcf
+        
+        # Index VCF
+        tabix -p vcf ${output_prefix}.vcf.gz
+        
+        TOTAL_VARIANTS=\$(zcat ${output_prefix}.vcf.gz | grep -v '^#' | wc -l)
+        echo "Total variants in VCF: \$TOTAL_VARIANTS"
+        
+        # Clean up intermediate BCF
+        rm -f combined.bcf
+    else
+        echo "No BCF files found - checking for VCF files as fallback"
+        
+        # Fallback to VCF files if BCF not found (shouldn't happen with new config)
+        ls chunk_*.vcf.gz 2>/dev/null | sort -V > vcf_files.txt || true
         
         if [ -s vcf_files.txt ]; then
-            cut -f2 vcf_files.txt > vcf_list.txt
-            
-            # Combine VCFs using bcftools
             bcftools concat \\
-                --file-list vcf_list.txt \\
+                --file-list vcf_files.txt \\
                 --output-type z \\
                 --output ${output_prefix}.vcf.gz
             
-            # Index VCF
             tabix -p vcf ${output_prefix}.vcf.gz
-            
-            TOTAL_VARIANTS=\$(zcat ${output_prefix}.vcf.gz | grep -v '^#' | wc -l)
-            echo "Total variants in VCF: \$TOTAL_VARIANTS"
         else
-            echo "No VCF files found"
-            # Create empty VCF with header
+            echo "No BCF or VCF files found - creating minimal VCF"
             echo '##fileformat=VCFv4.2' > empty.vcf
             echo '#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO' >> empty.vcf
             bgzip empty.vcf
@@ -130,7 +152,6 @@ process COMBINE_ANGSD {
     
     if [ -s ${output_prefix}.beagle.gz ]; then
         # Extract sites from beagle file
-        # Format: marker allele1 allele2 Ind0 Ind0 Ind0 Ind1 Ind1 Ind1...
         zcat ${output_prefix}.beagle.gz | tail -n +2 | \\
         awk '{
             split(\$1, a, "_")
@@ -156,26 +177,13 @@ process COMBINE_ANGSD {
     
     Files Generated:
     ----------------
+    - Genotype likelihoods: ${output_prefix}.beagle.gz (\$(zcat ${output_prefix}.beagle.gz | tail -n +2 | wc -l) sites)
+    - Allele frequencies: ${output_prefix}.mafs.gz (\$(zcat ${output_prefix}.mafs.gz | tail -n +2 | wc -l) sites)
+    - VCF file: ${output_prefix}.vcf.gz (\$(zcat ${output_prefix}.vcf.gz | grep -v '^#' | wc -l) variants)
+    - Sites file: ${output_prefix}.sites (\$(wc -l < ${output_prefix}.sites) positions)
+    
+    Processing complete!
     EOF
-    
-    if [ -s ${output_prefix}.beagle.gz ]; then
-        echo "- Genotype likelihoods: ${output_prefix}.beagle.gz (\$(zcat ${output_prefix}.beagle.gz | tail -n +2 | wc -l) sites)" >> ${output_prefix}_summary.txt
-    fi
-    
-    if [ -s ${output_prefix}.mafs.gz ]; then
-        echo "- Allele frequencies: ${output_prefix}.mafs.gz (\$(zcat ${output_prefix}.mafs.gz | tail -n +2 | wc -l) sites)" >> ${output_prefix}_summary.txt
-    fi
-    
-    if [ -f ${output_prefix}.vcf.gz ]; then
-        echo "- VCF file: ${output_prefix}.vcf.gz (\$(zcat ${output_prefix}.vcf.gz | grep -v '^#' | wc -l) variants)" >> ${output_prefix}_summary.txt
-    fi
-    
-    if [ -s ${output_prefix}.sites ]; then
-        echo "- Sites file: ${output_prefix}.sites (\$(wc -l < ${output_prefix}.sites) positions)" >> ${output_prefix}_summary.txt
-    fi
-    
-    echo "" >> ${output_prefix}_summary.txt
-    echo "Processing complete!" >> ${output_prefix}_summary.txt
     
     cat ${output_prefix}_summary.txt
     """

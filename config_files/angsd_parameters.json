@@ -95,10 +95,6 @@
     "doDepth": 1,
     "comment_doDepth": "1=Calculate and output depth statistics",
     "maxDepth": 1000,
-    "comment_maxDepth": "Maximum depth for statistics calculations",
-    "doVcf": 0,
-    "comment_doVcf": "1=Output VCF/BCF format (requires doMaf, doPost, or doGeno)",
-    "dobcf":1,
-    "comment_dobcf": "1=Output BCF format (binary VCF, more efficient than text VCF)"
+    "comment_maxDepth": "Maximum depth for statistics calculations"
   }
 }

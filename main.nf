@@ -27,7 +27,6 @@ params.bam_filter_config = null
 params.ploidy_map = null
 params.sites_file = null
 params.genotyper = "freebayes"  // "freebayes" or "angsd"
-params.angsd_output_format = "all"  // "beagle", "vcf", "glf", or "all"
 
 def helpMessage() {
     log.info"""
@@ -60,7 +59,6 @@ def helpMessage() {
     ANGSD-specific:
     --angsd_config      Path to JSON file containing ANGSD parameters (optional)
     --sites_file        Path to sites file for ANGSD (optional, for targeted analysis)
-    --angsd_output_format Output format for ANGSD: "beagle", "vcf", "glf", or "all" (default: "all")
     
     Examples:
     # Run with FreeBayes (default)
@@ -125,7 +123,7 @@ workflow {
         log.info "Output base name:  ${output_prefix}"
         log.info "ANGSD config:      ${params.angsd_config ?: 'Using default parameters'}"
         log.info "Sites file:        ${params.sites_file ?: 'None - will discover sites'}"
-        log.info "Output format:     ${params.angsd_output_format}"
+        log.info "Output files:      Beagle + VCF formats"
     } else {
         log.error "ERROR: Invalid genotyper '${params.genotyper}'. Must be 'freebayes' or 'angsd'"
         exit 1
@@ -271,8 +269,7 @@ workflow {
             bam_files_ch,
             bai_files_ch,
             angsd_config_ch,
-            sites_file_ch,
-            Channel.value(params.angsd_output_format)
+            sites_file_ch
         )
         
         // Collect all chunk output files
@@ -284,19 +281,16 @@ workflow {
         // Combine ANGSD outputs
         COMBINE_ANGSD(
             all_angsd_files,
-            Channel.value(output_prefix),
-            Channel.value(params.angsd_output_format)
+            Channel.value(output_prefix)
         )
         
-        // Optional: If VCF output is generated, run summarize
-        if (params.angsd_output_format == "vcf" || params.angsd_output_format == "all") {
-            if (params.ploidy_map) {
-                ploidy_map_ch = Channel.fromPath(params.ploidy_map, checkIfExists: true).first()
-            } else {
-                ploidy_map_ch = Channel.value(file('NO_FILE'))
-            }
-            SUMMARIZE_VCFS(COMBINE_ANGSD.out.vcf, ploidy_map_ch)
+        // Optional: Run VCF summarize
+        if (params.ploidy_map) {
+            ploidy_map_ch = Channel.fromPath(params.ploidy_map, checkIfExists: true).first()
+        } else {
+            ploidy_map_ch = Channel.value(file('NO_FILE'))
         }
+        SUMMARIZE_VCFS(COMBINE_ANGSD.out.vcf, ploidy_map_ch)
     }
 }
 
@@ -323,9 +317,7 @@ workflow.onComplete {
             log.info "ANGSD outputs:"
             log.info "- Genotype likelihoods: ${params.output_dir}/${output_prefix}.beagle.gz"
             log.info "- Allele frequencies: ${params.output_dir}/${output_prefix}.mafs.gz"
-            if (params.angsd_output_format == "vcf" || params.angsd_output_format == "all") {
-                log.info "- VCF file: ${params.output_dir}/${output_prefix}.vcf.gz"
-            }
+            log.info "- VCF file: ${params.output_dir}/${output_prefix}.vcf.gz"
             log.info "- Summary: ${params.output_dir}/${output_prefix}_summary.txt"
         }
         

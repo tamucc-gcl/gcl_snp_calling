@@ -26,7 +26,6 @@ OPTIONS:
     -n, --chunks <INT>            Number of chunks to split genome (default: 50)
     -p, --ploidy-map <FILE>       Ploidy map file (FreeBayes only, optional)
     -s, --sites <FILE>            Sites file for targeted analysis (ANGSD only, optional)
-    -f, --format <STRING>         ANGSD output format: beagle/vcf/all (default: all, ANGSD only)
     -o, --output <STRING>         Output VCF name (used as base name for ANGSD outputs)
     -h, --help                    Show this help message
 
@@ -64,7 +63,6 @@ BAM_FILTER="gcl_snp_calling/bam_filter_parameters.json"
 N_CHUNKS="50"
 PLOIDY_MAP=""
 SITES_FILE=""
-OUTPUT_FORMAT="all"
 OUTPUT_VCF="raw_variants.vcf.gz"  # Default output name for both genotypers
 
 # Check if using legacy format (positional arguments)
@@ -88,8 +86,8 @@ if [[ $# -gt 0 && "$1" != "-"* ]]; then
     fi
 else
     # Parse command line arguments using getopt
-    TEMP=$(getopt -o g:c:b:n:p:s:f:o:h \
-                  --long genotyper:,config:,bam-filter:,chunks:,ploidy-map:,sites:,format:,output:,help \
+    TEMP=$(getopt -o g:c:b:n:p:s:o:h \
+                  --long genotyper:,config:,bam-filter:,chunks:,ploidy-map:,sites:,output:,help \
                   -n 'run_snpCall.sbatch' -- "$@")
     
     if [ $? != 0 ]; then
@@ -123,10 +121,6 @@ else
                 ;;
             -s|--sites)
                 SITES_FILE="$2"
-                shift 2
-                ;;
-            -f|--format)
-                OUTPUT_FORMAT="$2"
                 shift 2
                 ;;
             -o|--output)
@@ -255,10 +249,6 @@ elif [ "${GENOTYPER}" = "angsd" ]; then
     
     echo "Output base name: ${OUTPUT_PREFIX}"
     
-    # Add output format
-    CMD="${CMD} --angsd_output_format ${OUTPUT_FORMAT}"
-    echo "Output format: ${OUTPUT_FORMAT}"
-    
     # Add sites file if provided
     if [ -n "${SITES_FILE}" ] && [ -f "${SITES_FILE}" ]; then
         echo "Sites file: ${SITES_FILE}"
@@ -266,6 +256,16 @@ elif [ "${GENOTYPER}" = "angsd" ]; then
         CMD="${CMD} --sites_file ${SITES_FILE}"
     else
         echo "Sites: Will discover from data"
+    fi
+    
+    # Show expected outputs
+    echo ""
+    echo "Expected output files:"
+    echo "  - ${OUTPUT_PREFIX}.beagle.gz (genotype likelihoods)"
+    echo "  - ${OUTPUT_PREFIX}.mafs.gz (allele frequencies)"
+    echo "  - ${OUTPUT_PREFIX}.vcf.gz (VCF format)"
+    echo "  - ${OUTPUT_PREFIX}.sites (positions file)"
+    echo "  - ${OUTPUT_PREFIX}_summary.txt (run summary)" "Sites: Will discover from data"
     fi
     
     # Show expected outputs
@@ -310,9 +310,7 @@ if [ ${EXIT_CODE} -eq 0 ]; then
         echo "Main outputs:"
         echo "  - ./results/${OUTPUT_PREFIX}.beagle.gz"
         echo "  - ./results/${OUTPUT_PREFIX}.mafs.gz"
-        if [[ "${OUTPUT_FORMAT}" == "all" || "${OUTPUT_FORMAT}" == "vcf" ]]; then
-            echo "  - ./results/${OUTPUT_PREFIX}.vcf.gz"
-        fi
+        echo "  - ./results/${OUTPUT_PREFIX}.vcf.gz"
     fi
     
     echo ""

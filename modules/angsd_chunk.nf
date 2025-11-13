@@ -11,7 +11,6 @@ process ANGSD_CHUNK {
     path bais        // List of BAI files
     path config      // ANGSD configuration JSON
     path sites_file  // Optional sites file for specific positions
-    val output_format // Format: 'beagle', 'vcf', 'glf', or 'all'
     
     output:
     tuple val(chunk_id), path("chunk_${chunk_id}.*"), emit: chunk_files
@@ -25,7 +24,7 @@ process ANGSD_CHUNK {
     echo "Processing chunk ${chunk_id} with ANGSD"
     echo "Regions: ${regions_string}"
     echo "Reference: ${reference}"
-    echo "Output format: ${output_format}"
+    echo "Will output both Beagle and BCF formats"
     
     # Count BAM files
     BAM_COUNT=\$(ls -1 *.bam 2>/dev/null | wc -l)
