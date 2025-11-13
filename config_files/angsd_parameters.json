@@ -64,14 +64,10 @@
     "comment_doMaf": "Calculate allele frequencies: 0=none, 1=known major/minor, 2=known ancestral, 3=EM algorithm",
     "SNP_pval": 1e-6,
     "comment_SNP_pval": "P-value threshold for SNP calling (1e-6 = standard, 1=no filtering)",
-    "rmTriallelic": 0,
-    "comment_rmTriallelic": "1=Remove sites with >2 alleles (recommended for diploid organisms)",
     "skipTriallelic": 1,
     "comment_skipTriallelic": "1=Skip processing of tri-allelic sites entirely (faster than rmTriallelic)",
     "minMaf": 0.01,
     "comment_minMaf": "Minimum minor allele frequency to keep a site (0.01=1%)",
-    "minLRT": -1,
-    "comment_minLRT": "Minimum likelihood ratio test score for SNP (-1=disabled)"
   },
   
   "pooled_sequencing": {
