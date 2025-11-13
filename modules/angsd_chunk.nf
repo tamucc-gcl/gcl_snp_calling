@@ -254,36 +254,108 @@ PYTHON_CONFIG
     
     # Run ANGSD
     echo "Full ANGSD command: \$ANGSD_CMD"
-    \$ANGSD_CMD
+    echo "----------------------------------------"
     
-    # Save the arguments file for debugging
-    if [ -f "${chunk_id}.arg" ]; then
+    # Actually run ANGSD and capture exit status
+    \$ANGSD_CMD
+    ANGSD_EXIT=\$?
+    
+    echo "----------------------------------------"
+    echo "ANGSD exit status: \$ANGSD_EXIT"
+    
+    # Check if ANGSD ran successfully
+    if [ \$ANGSD_EXIT -eq 0 ] && [ -f "${chunk_id}.arg" ]; then
         echo "ANGSD completed successfully"
         echo "Arguments saved in ${chunk_id}.arg"
         
         # List output files
         echo "Output files generated:"
-        ls -la ${chunk_id}.*
+        ls -la ${chunk_id}.* 2>/dev/null || echo "No output files found"
         
         # Check if beagle file has content
         if [ -f "${chunk_id}.beagle.gz" ]; then
-            SITES=\$(zcat ${chunk_id}.beagle.gz | tail -n +2 | wc -l)
+            SITES=\$(zcat ${chunk_id}.beagle.gz 2>/dev/null | tail -n +2 | wc -l)
             echo "Sites with genotype likelihoods: \$SITES"
+            
+            if [ \$SITES -eq 0 ]; then
+                echo "WARNING: Beagle file exists but contains no sites"
+            fi
+        else
+            echo "WARNING: No beagle file generated"
         fi
         
         # Check if BCF was generated
         if [ -f "${chunk_id}.bcf" ]; then
-            VARIANTS=\$(bcftools view -H ${chunk_id}.bcf | wc -l)
+            VARIANTS=\$(bcftools view -H ${chunk_id}.bcf 2>/dev/null | wc -l || echo "0")
             echo "Variants in BCF: \$VARIANTS"
+            
+            if [ \$VARIANTS -eq 0 ]; then
+                echo "WARNING: BCF file exists but contains no variants"
+            fi
+        else
+            echo "WARNING: No BCF file generated"
+        fi
+        
+        # If no sites were found, this might be okay for some chunks
+        if [ ! -f "${chunk_id}.beagle.gz" ] || [ ! -f "${chunk_id}.mafs.gz" ]; then
+            echo "NOTE: This chunk may have no variable sites, creating empty files"
+            touch ${chunk_id}.beagle.gz
+            touch ${chunk_id}.mafs.gz
+            
+            if [ ! -f "${chunk_id}.bcf" ]; then
+                # Create minimal BCF
+                echo "Creating minimal BCF file"
+                echo -e "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO" > ${chunk_id}.vcf
+                bcftools view -Ob ${chunk_id}.vcf > ${chunk_id}.bcf
+                rm ${chunk_id}.vcf
+            fi
         fi
         
     else
-        echo "WARNING: ANGSD may have failed - no .arg file generated"
-        # Create empty outputs to prevent pipeline failure
+        echo "ERROR: ANGSD failed with exit status \$ANGSD_EXIT"
+        echo "No .arg file was generated"
+        echo ""
+        echo "Checking for error indicators:"
+        
+        # Check if BAMs are readable
+        echo "BAM file check:"
+        while read bam; do
+            if [ -f "\$bam" ]; then
+                echo "  \$bam: exists"
+                samtools quickcheck "\$bam" && echo "    - valid" || echo "    - CORRUPT"
+            else
+                echo "  \$bam: NOT FOUND"
+            fi
+        done < bam.list
+        
+        # Check reference
+        echo ""
+        echo "Reference check:"
+        if [ -f "${reference}" ]; then
+            echo "  ${reference}: exists"
+        else
+            echo "  ${reference}: NOT FOUND"
+        fi
+        
+        # Check regions
+        echo ""
+        echo "Regions to process:"
+        cat angsd_regions.txt
+        
+        # Create empty outputs to allow pipeline to continue
+        echo ""
+        echo "Creating empty output files to allow pipeline to continue..."
         touch ${chunk_id}.beagle.gz
         touch ${chunk_id}.mafs.gz
-        touch ${chunk_id}.bcf
-        echo "Created empty output files"
+        
+        # Create empty but valid BCF
+        echo '##fileformat=VCFv4.2' > ${chunk_id}.vcf
+        echo -e "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO" >> ${chunk_id}.vcf
+        bcftools view -Ob ${chunk_id}.vcf > ${chunk_id}.bcf 2>/dev/null || touch ${chunk_id}.bcf
+        rm -f ${chunk_id}.vcf
+        
+        # Exit with error
+        exit 1
     fi
     
     echo "Chunk ${chunk_id} processing complete"
