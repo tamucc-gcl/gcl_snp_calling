@@ -9,7 +9,7 @@
 
 process PCANGSD {
     tag "pcangsd_${output_prefix}"
-    publishDir params.output_dir, mode: 'copy'
+    publishDir "${params.output_dir}/pcangsd", mode: 'copy'
     
     input:
     path beagle_file
