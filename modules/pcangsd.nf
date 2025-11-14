@@ -55,6 +55,8 @@ process PCANGSD {
         --tree \
         --maf-save \
         --pi-save \
+        --admix \
+        --admix-alpha 0.1 \
         2>&1 | tee ${output_prefix}.pcangsd.log
     
         # --admix \
