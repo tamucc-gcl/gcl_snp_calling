@@ -78,8 +78,6 @@
     "comment_n_individuals_per_pool": "Number of individuals per pool (for pooled sequencing)",
     "doSaf": 0,
     "comment_doSaf": "Site allele frequency likelihood: 0=none, 1=calculate SAF, 2=calculate SFS",
-    "fold": 0,
-    "comment_fold": "1=Fold the spectrum (use when no ancestral state available)",
     "anc": null,
     "comment_anc": "Path to ancestral sequence file (for unfolded SFS)"
   },

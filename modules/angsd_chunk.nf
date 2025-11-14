@@ -21,7 +21,7 @@ process ANGSD_CHUNK {
     script:
     """
     echo "Processing chunk ${chunk_id} with ANGSD"
-    echo "Regions: ${regions_string}"
+    # echo "Regions: ${regions_string}"
     echo "Reference: ${reference}"
 
     # --- Basic BAM checks ----------------------------------------------------
