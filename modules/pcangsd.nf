@@ -50,9 +50,9 @@ process PCANGSD {
         exit 1
     fi
 
-    # Extracts every other sample name (since diploid samples appear twice)
+    # Extracts every other sample name (since diploid samples appear three times)
     zcat ${beagle_file} | head -n1 | awk '{
-        for(i=4; i<=NF; i+=2) {
+        for(i=4; i<=NF; i+=3) {
             print \$i
         }
     }' > sample_names.txt
