@@ -171,14 +171,10 @@ try:
         params.append(f"-doMaf {snp_calling['doMaf']}")
     if snp_calling.get('SNP_pval') is not None:
         params.append(f"-SNP_pval {snp_calling['SNP_pval']}")
-    if snp_calling.get('rmTriallelic'):
-        params.append(f"-rmTriallelic {int(snp_calling['rmTriallelic'])}")
     if snp_calling.get('skipTriallelic'):
         params.append(f"-skipTriallelic {int(snp_calling['skipTriallelic'])}")
     if snp_calling.get('minMaf'):
         params.append(f"-minMaf {snp_calling['minMaf']}")
-    if snp_calling.get('minLRT'):
-        params.append(f"-minLRT {snp_calling['minLRT']}")
     
     # ========== POOLED SEQUENCING ==========
     if pooled_opts.get('doSaf'):
@@ -192,9 +188,11 @@ try:
     # Always enable BCF output if genotype calling is enabled
     if gl_options.get('doGeno', 0) > 0:
         params.append("-dobcf 1")
+        # For BCF output, ANGSD requires these specific parameters
+        params.append("--ignore-RG 0")
         print("echo 'BCF output enabled (genotype calling is active)'")
     
-    # Always add counts and depth
+    # Always add counts and depth (required for BCF)
     if 'doCounts' not in basic:
         params.append("-doCounts 1")
     if 'doDepth' not in output_opts:
@@ -243,6 +241,7 @@ PYTHON_CONFIG
         ANGSD_CMD="\$ANGSD_CMD -doGeno 2"       # Call genotypes
         ANGSD_CMD="\$ANGSD_CMD -doPost 1"       # Calculate posteriors
         ANGSD_CMD="\$ANGSD_CMD -dobcf 1"        # Output BCF format
+        ANGSD_CMD="\$ANGSD_CMD --ignore-RG 0"   # Required for BCF output
         
         # Basic filters
         ANGSD_CMD="\$ANGSD_CMD -minMapQ 20"

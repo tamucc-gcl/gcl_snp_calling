@@ -30,10 +30,10 @@
     "comment_minMapQ": "Minimum mapping quality score (20=99% confidence in mapping position)",
     "minInd": 1,
     "comment_minInd": "Minimum number of individuals required to have data at a site",
-    "setMinDepth": -1,
-    "comment_setMinDepth": "Minimum total depth across all samples (-1=disabled)",
-    "setMaxDepth": -1,
-    "comment_setMaxDepth": "Maximum total depth to avoid repetitive regions (-1=disabled)",
+    "setMinDepth": 0,
+    "comment_setMinDepth": "Minimum total depth across all samples",
+    "setMaxDepth": 0,
+    "comment_setMaxDepth": "Maximum total depth to avoid repetitive regions",
     "setMinDepthInd": 1,
     "comment_setMinDepthInd": "Minimum reads per individual to include them at a site",
     "setMaxDepthInd": 100,
@@ -67,7 +67,7 @@
     "skipTriallelic": 1,
     "comment_skipTriallelic": "1=Skip processing of tri-allelic sites entirely (faster than rmTriallelic)",
     "minMaf": 0.01,
-    "comment_minMaf": "Minimum minor allele frequency to keep a site (0.01=1%)",
+    "comment_minMaf": "Minimum minor allele frequency to keep a site (0.01=1%)"
   },
   
   "pooled_sequencing": {
