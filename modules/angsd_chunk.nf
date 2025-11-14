@@ -297,7 +297,7 @@ PYTHON_CONFIG
 
         # Write final Beagle in one shot
         zcat "${chunk_id}_raw.beagle.gz"  | \
-        awk -v names="$(tr '\n' ' ' < samples.txt)" '
+        awk -v names="\$(tr '\n' ' ' < samples.txt)" '
             NR==1 {
                 n = split(names, a, " ")
                 # Keep only marker allele1 allele2, then each sample twice
