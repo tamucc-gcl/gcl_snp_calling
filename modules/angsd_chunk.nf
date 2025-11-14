@@ -268,15 +268,15 @@ PYTHON_CONFIG
     echo "ANGSD exit status: \$ANGSD_EXIT"
 
     # Quick summary of outputs
-    if [ -f "${chunk_id}.beagle.gz" ]; then
-        SITES=\$(zcat ${chunk_id}.beagle.gz 2>/dev/null | tail -n +2 | wc -l)
+    if [ -f "${chunk_id}_raw.beagle.gz" ]; then
+        SITES=\$(zcat ${chunk_id}_raw.beagle.gz 2>/dev/null | tail -n +2 | wc -l)
         echo "Sites with genotype likelihoods in Beagle: \$SITES"
     else
         echo "No Beagle file generated"
     fi
 
-    if [ -f "${chunk_id}.bcf" ]; then
-        VARIANTS=\$(bcftools view -H ${chunk_id}.bcf 2>/dev/null | wc -l || echo "0")
+    if [ -f "${chunk_id}_raw.bcf" ]; then
+        VARIANTS=\$(bcftools view -H ${chunk_id}_raw.bcf 2>/dev/null | wc -l || echo "0")
         echo "Variants in BCF: \$VARIANTS"
     else
         echo "No BCF file generated"
