@@ -55,7 +55,8 @@ process PCANGSD {
         --maf-save \
         --pi-save \
         --admix \
-        --admix-alpha 0.1 \
+        --admix-seed 1234 \
+        --admix-auto 10 \
         2>&1 | tee ${output_prefix}.pcangsd.log
     
     PCANGSD_EXIT=\$?
