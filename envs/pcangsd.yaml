@@ -20,7 +20,7 @@ dependencies:
   - r-ggrepel
   - bioconductor-ggtree
   - bioconductor-treeio
-  - bioconductor-tidytree
+  - r-tidytree
 
   # install pcangsd from GitHub so setup.py runs automatically
   - pip:
