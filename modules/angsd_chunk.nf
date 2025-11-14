@@ -287,7 +287,7 @@ PYTHON_CONFIG
         echo "Reheadering Beagle sample names based on bam.list"
 
         # Make clean sample names: basename, drop .bam, optionally drop .filtered
-        sed -E 's#.*/##; s/\.bam$//; s/\.filtered$//' bam.list > samples.txt
+        sed -E 's#.*/##; s/\.bam\$//; s/\.filtered$//' bam.list > samples.txt
 
         # Rewrite Beagle header: marker chr pos major minor SAMPLE1 SAMPLE2 ...
         zcat ${chunk_id}.beagle.gz | \
