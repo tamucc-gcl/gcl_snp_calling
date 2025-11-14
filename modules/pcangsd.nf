@@ -54,11 +54,11 @@ process PCANGSD {
         --tree \
         --maf-save \
         --pi-save \
-        --admix \
-        --admix-seed 1234 \
-        --admix-auto 10 \
         2>&1 | tee ${output_prefix}.pcangsd.log
     
+        # --admix \
+        # --admix-auto 10 \
+
     PCANGSD_EXIT=\$?
     
     echo "PCAngsd exit status: \$PCANGSD_EXIT"
