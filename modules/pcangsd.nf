@@ -17,14 +17,15 @@ process PCANGSD {
     
     output:
     path "${output_prefix}.pcangsd.cov", emit: covariance
-    path "${output_prefix}.pcangsd.maf.npy", emit: maf, optional: true
+    path "${output_prefix}.pcangsd.freqs", emit: maf, optional: true
     path "${output_prefix}.pcangsd.pi.npy", emit: pi, optional: true
     path "${output_prefix}.pcangsd.admix.Q", emit: admix_q, optional: true
     path "${output_prefix}.pcangsd.admix.P", emit: admix_p, optional: true
-    path "${output_prefix}.pcangsd.tree.nwk", emit: tree, optional: true
+    path "${output_prefix}.pcangsd.tree", emit: tree, optional: true
+    path "${output_prefix}.pcangsd.tree.cov", emit: tree_cov, optional: true
     path "${output_prefix}.pcangsd.log", emit: log
     path "${output_prefix}_pcangsd_summary.txt", emit: summary
-    
+
     script:
     """
     echo "Running PCAngsd on: ${beagle_file}"
