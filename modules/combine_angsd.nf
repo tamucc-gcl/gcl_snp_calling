@@ -13,8 +13,8 @@ process COMBINE_ANGSD {
     path "${output_prefix}.mafs.gz", emit: mafs
     path "${output_prefix}.vcf.gz", emit: vcf
     path "${output_prefix}.vcf.gz.tbi", emit: vcf_index
-    path "${output_prefix}.sites", emit: sites
-    path "${output_prefix}_summary.txt", emit: summary
+    //path "${output_prefix}.sites", emit: sites
+    //path "${output_prefix}_summary.txt", emit: summary
     
     script:
     """

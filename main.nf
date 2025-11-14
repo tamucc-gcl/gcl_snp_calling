@@ -9,6 +9,7 @@ include { FREEBAYES_CHUNK } from './modules/freebayes_chunk'
 include { ANGSD_CHUNK } from './modules/angsd_chunk'
 include { COMBINE_VCFS } from './modules/combine_vcfs'
 include { COMBINE_ANGSD } from './modules/combine_angsd'
+include { PCANGSD } from './modules/pcangsd'
 include { SUMMARIZE_VCFS } from './modules/summarize_vcfs'
 include { samtools_stats as SAMTOOLS_STATS_RAW } from './modules/samtools_stats'
 include { samtools_stats as SAMTOOLS_STATS_FILTERED } from './modules/samtools_stats'
@@ -281,6 +282,12 @@ workflow {
         // Combine ANGSD outputs
         COMBINE_ANGSD(
             all_angsd_files,
+            Channel.value(output_prefix)
+        )
+
+        // Run PCAngsd on combined Beagle file
+        PCANGSD(
+            COMBINE_ANGSD.out.beagle,
             Channel.value(output_prefix)
         )
         

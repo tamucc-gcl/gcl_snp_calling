@@ -1,0 +1,18 @@
+name: pcangsd
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+
+dependencies:
+  # pcangsd prerequisites
+  - python=3.10
+  - numpy
+  - scipy
+  - cython
+  - h5py
+  - pip
+
+  # install pcangsd from GitHub so setup.py runs automatically
+  - pip:
+      - git+https://github.com/Rosemeis/pcangsd.git
