@@ -134,7 +134,24 @@ EOF
     cat ${output_prefix}_pcangsd_summary.txt
     echo "========================================"
     
-    #PUT R CHUNK HERE
+    # Run R plotting script if covariance matrix exists
+    if [ -f "${output_prefix}.pcangsd.cov" ]; then
+
+        echo ""
+        echo "Generating visualization plots..."
+        
+        # Copy the R script from the module directory
+        cp ${projectDir}/modules/pcangsd_plots.R .
+        
+        # Run R script with output prefix and sample names
+        Rscript pcangsd_plots.R ${output_prefix} sample_names.txt
+        
+        if [ \$? -eq 0 ]; then
+            echo "Visualization plots created successfully!"
+        else
+            echo "WARNING: R plotting script failed, but PCAngsd analysis completed successfully"
+        fi
+    fi
     
     echo "PCAngsd analysis complete!"
     """

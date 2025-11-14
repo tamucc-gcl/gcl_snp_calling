@@ -12,6 +12,15 @@ dependencies:
   - cython
   - h5py
   - pip
+  - r-base>=4.3
+  - r-ggplot2
+  - r-dplyr
+  - r-tidyr
+  - r-patchwork
+  - r-ggrepel
+  - bioconductor-ggtree
+  - bioconductor-treeio
+  - bioconductor-tidytree
 
   # install pcangsd from GitHub so setup.py runs automatically
   - pip:
