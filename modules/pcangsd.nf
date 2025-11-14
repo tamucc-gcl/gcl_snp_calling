@@ -25,7 +25,11 @@ process PCANGSD {
     path "${output_prefix}.pcangsd.tree.cov", emit: tree_cov, optional: true
     path "${output_prefix}.pcangsd.log", emit: log
     path "${output_prefix}_pcangsd_summary.txt", emit: summary
-
+    path "${output_prefix}_pcangsd_pca.png", emit: pca_plot, optional: true
+    path "${output_prefix}_pcangsd_admixture.png", emit: admix_plot, optional: true
+    path "${output_prefix}_pcangsd_tree.png", emit: tree_plot, optional: true
+    path "sample_names.txt", emit: sample_names, optional: true
+    
     script:
     """
     echo "Running PCAngsd on: ${beagle_file}"
@@ -48,20 +52,17 @@ process PCANGSD {
     
     # Run PCAngsd with all requested analyses
     echo "Starting PCAngsd analysis..."
-    pcangsd \
-        -b ${beagle_file} \
-        -t ${task.cpus} \
-        -o ${output_prefix}.pcangsd \
-        --tree \
-        --maf-save \
-        --pi-save \
-        --admix \
-        --admix-alpha 0.1 \
+    pcangsd \\
+        -b ${beagle_file} \\
+        -t ${task.cpus} \\
+        -o ${output_prefix}.pcangsd \\
+        --tree \\
+        --maf_save \\
+        --pi_save \\
+        --admix \\
+        --admix_auto 10 \\
         2>&1 | tee ${output_prefix}.pcangsd.log
     
-        # --admix \
-        # --admix-auto 10 \
-
     PCANGSD_EXIT=\$?
     
     echo "PCAngsd exit status: \$PCANGSD_EXIT"
@@ -111,8 +112,8 @@ EOF
         echo "- Admixture frequencies: ${output_prefix}.pcangsd.admix.P" >> ${output_prefix}_pcangsd_summary.txt
     fi
     
-    if [ -f "${output_prefix}.pcangsd.tree.nwk" ]; then
-        echo "- Neighbor-joining tree: ${output_prefix}.pcangsd.tree.nwk" >> ${output_prefix}_pcangsd_summary.txt
+    if [ -f "${output_prefix}.pcangsd.tree" ]; then
+        echo "- Neighbor-joining tree: ${output_prefix}.pcangsd.tree" >> ${output_prefix}_pcangsd_summary.txt
     fi
     
     echo "" >> ${output_prefix}_pcangsd_summary.txt
@@ -123,6 +124,24 @@ EOF
     echo "========================================"
     cat ${output_prefix}_pcangsd_summary.txt
     echo "========================================"
+    
+    # Run R plotting script if covariance matrix exists
+    if [ -f "${output_prefix}.pcangsd.cov" ]; then
+        echo ""
+        echo "Generating visualization plots..."
+        
+        # Copy the R script from the module directory
+        cp ${projectDir}/modules/pcangsd_plots.R .
+        
+        # Run R script with output prefix and sample names
+        Rscript pcangsd_plots.R ${output_prefix} sample_names.txt
+        
+        if [ \$? -eq 0 ]; then
+            echo "Visualization plots created successfully!"
+        else
+            echo "WARNING: R plotting script failed, but PCAngsd analysis completed successfully"
+        fi
+    fi
     
     echo "PCAngsd analysis complete!"
     """
