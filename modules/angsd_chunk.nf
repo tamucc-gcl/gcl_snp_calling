@@ -318,7 +318,7 @@ PYTHON_CONFIG
     # Beagle is already handled separately (reheadered from RAW_PREFIX.beagle.gz)
     # Now map the rest of the ANGSD outputs to the clean names
     for ext in mafs.gz bcf geno.gz depthSample depthGlobal arg; do
-        src="${chunk_id}_raw".\${ext}"
+        src="${chunk_id}_raw.\${ext}"
         dest="${chunk_id}.\${ext}"
         if [ -f "\$src" ]; then
             echo "Creating final \$dest from \$src"
