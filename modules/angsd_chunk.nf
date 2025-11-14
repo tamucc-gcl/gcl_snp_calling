@@ -287,13 +287,12 @@ PYTHON_CONFIG
         echo "Reheadering Beagle sample names based on bam.list"
 
         # Make clean sample names: basename, drop .bam, optionally drop .filtered
-        # Make clean sample names based on bam.list:
         #  - strip directory
         #  - drop trailing .bam
         #  - drop trailing .filtered (if present)
         : > samples.txt
         while read -r bam; do
-            base=\$(basename "$bam")
+            base=\$(basename "\$bam")
             base=\${base%.bam}
             base=\${base%.filtered}
             echo "\$base" >> samples.txt
