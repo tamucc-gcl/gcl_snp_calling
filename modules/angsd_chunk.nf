@@ -282,6 +282,35 @@ PYTHON_CONFIG
         echo "No BCF file generated"
     fi
 
+    # Reheader Beagle sample names using bam.list
+    if [ -f "bam.list" ] && [ -f "${chunk_id}.beagle.gz" ]; then
+        echo "Reheadering Beagle sample names based on bam.list"
+
+        # Make clean sample names: basename, drop .bam, optionally drop .filtered
+        sed -E 's#.*/##; s/\.bam$//; s/\.filtered$//' bam.list > samples.txt
+
+        # Rewrite Beagle header: marker chr pos major minor SAMPLE1 SAMPLE2 ...
+        zcat ${chunk_id}.beagle.gz | \
+        awk -v names="\$(tr '\n' ' ' < samples.txt)" '
+            NR==1 {
+                n = split(names, a, " ")
+                # standard ANGSD beagle header: marker chr pos major minor Ind1 ...
+                out = \$1 FS \$2 FS \$3 FS \$4 FS \$5
+                for (i = 1; i <= n; i++) {
+                    out = out FS a[i]
+                }
+                print out
+                next
+            }
+            { print }
+        ' | bgzip > ${chunk_id}.beagle.tmp.gz
+
+        mv ${chunk_id}.beagle.gz ${chunk_id}.beagle.orig.gz
+        mv ${chunk_id}.beagle.tmp.gz ${chunk_id}.beagle.gz
+    else
+        echo "Skipping Beagle reheader (missing bam.list or ${chunk_id}.beagle.gz)"
+    fi
+
     if [ \$ANGSD_EXIT -ne 0 ]; then
         echo "ERROR: ANGSD failed for chunk ${chunk_id}"
         exit 1
