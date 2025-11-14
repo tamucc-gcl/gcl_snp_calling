@@ -300,10 +300,10 @@ PYTHON_CONFIG
         awk -v names="\$(tr '\n' ' ' < samples.txt)" '
             NR==1 {
                 n = split(names, a, " ")
-                # Keep only marker allele1 allele2, then each sample twice
+                # Keep only marker allele1 allele2, then each sample three times
                 out = \$1 FS \$2 FS \$3
                 for (i = 1; i <= n; i++) {
-                    out = out FS a[i] FS a[i]
+                    out = out FS a[i] FS a[i] FS a[i]
                 }
                 print out
                 next
