@@ -293,10 +293,10 @@ PYTHON_CONFIG
         #  - drop trailing .filtered (if present)
         : > samples.txt
         while read -r bam; do
-            base=$(basename "$bam")
-            base=${base%.bam}
-            base=${base%.filtered}
-            echo "$base" >> samples.txt
+            base=\$(basename "$bam")
+            base=\${base%.bam}
+            base=\${base%.filtered}
+            echo "\$base" >> samples.txt
         done < bam.list
 
         # Rewrite Beagle header: marker chr pos major minor SAMPLE1 SAMPLE2 ...
