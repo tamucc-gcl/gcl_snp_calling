@@ -13,6 +13,7 @@ dependencies:
   - h5py
   - pip
   - r-base>=4.3
+  - r-mass
   - r-ggplot2
   - r-dplyr
   - r-tidyr
