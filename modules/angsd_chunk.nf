@@ -65,7 +65,7 @@ process ANGSD_CHUNK {
     ANGSD_CMD="angsd -bam bam.list"
     ANGSD_CMD="\$ANGSD_CMD -ref ${reference}"
     ANGSD_CMD="\$ANGSD_CMD -rf angsd_regions.txt"
-    ANGSD_CMD="\$ANGSD_CMD -out ${chunk_id}"
+    ANGSD_CMD="\$ANGSD_CMD -out ${chunk_id}_raw"
     ANGSD_CMD="\$ANGSD_CMD -nThreads ${task.cpus}"
 
     # Optional sites file
@@ -283,13 +283,10 @@ PYTHON_CONFIG
     fi
 
     # Reheader Beagle sample names using bam.list
-    if [ -f "bam.list" ] && [ -f "${chunk_id}.beagle.gz" ]; then
+    if [ -f "${chunk_id}_raw.beagle.gz" ] && [ -f "bam.list" ]; then
         echo "Reheadering Beagle sample names based on bam.list"
 
-        # Make clean sample names: basename, drop .bam, optionally drop .filtered
-        #  - strip directory
-        #  - drop trailing .bam
-        #  - drop trailing .filtered (if present)
+        # Build clean sample names:
         : > samples.txt
         while read -r bam; do
             base=\$(basename "\$bam")
@@ -298,27 +295,38 @@ PYTHON_CONFIG
             echo "\$base" >> samples.txt
         done < bam.list
 
-        # Rewrite Beagle header: marker chr pos major minor SAMPLE1 SAMPLE2 ...
-        zcat ${chunk_id}.beagle.gz | \
-        awk -v names="\$(tr '\n' ' ' < samples.txt)" '
+        # Write final Beagle in one shot
+        zcat "${chunk_id}_raw.beagle.gz"  | \
+        awk -v names="$(tr '\n' ' ' < samples.txt)" '
             NR==1 {
                 n = split(names, a, " ")
-                # standard ANGSD beagle header: marker chr pos major minor Ind1 ...
-                out = \$1 FS \$2 FS \$3 FS \$4 FS \$5
+                # Keep only marker allele1 allele2, then each sample twice
+                out = \$1 FS \$2 FS \$3
                 for (i = 1; i <= n; i++) {
-                    out = out FS a[i]
+                    out = out FS a[i] FS a[i]
                 }
                 print out
                 next
             }
             { print }
-        ' | bgzip > ${chunk_id}.beagle.tmp.gz
+        ' | bgzip > "${chunk_id}.beagle.gz"
 
-        mv ${chunk_id}.beagle.gz ${chunk_id}.beagle.orig.gz
-        mv ${chunk_id}.beagle.tmp.gz ${chunk_id}.beagle.gz
     else
-        echo "Skipping Beagle reheader (missing bam.list or ${chunk_id}.beagle.gz)"
+        echo "Skipping Beagle reheader (missing $RAW_BEAGLE or bam.list)"
     fi
+    
+    # Beagle is already handled separately (reheadered from RAW_PREFIX.beagle.gz)
+    # Now map the rest of the ANGSD outputs to the clean names
+    for ext in mafs.gz bcf geno.gz depthSample depthGlobal arg; do
+        src="${chunk_id}_raw".\${ext}"
+        dest="${chunk_id}.\${ext}"
+        if [ -f "\$src" ]; then
+            echo "Creating final \$dest from \$src"
+            cp "\$src" "\$dest"
+        else
+            echo "Note: \$src not found, skipping"
+        fi
+    done
 
     if [ \$ANGSD_EXIT -ne 0 ]; then
         echo "ERROR: ANGSD failed for chunk ${chunk_id}"
