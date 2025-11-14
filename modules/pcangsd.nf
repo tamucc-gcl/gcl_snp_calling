@@ -47,15 +47,15 @@ process PCANGSD {
     
     # Run PCAngsd with all requested analyses
     echo "Starting PCAngsd analysis..."
-    pcangsd \\
-        -b ${beagle_file} \\
-        -t ${task.cpus} \\
-        -o ${output_prefix}.pcangsd \\
-        --tree \\
-        --maf_save \\
-        --pi_save \\
-        --admix \\
-        --admix_auto 10 \\
+    pcangsd \
+        -b ${beagle_file} \
+        -t ${task.cpus} \
+        -o ${output_prefix}.pcangsd \
+        --tree \
+        --maf_save \
+        --pi_save \
+        --admix \
+        --admix_auto 10 \
         2>&1 | tee ${output_prefix}.pcangsd.log
     
     PCANGSD_EXIT=\$?
