@@ -59,17 +59,19 @@ process PCANGSD {
     
     # Run PCAngsd with all requested analyses
     echo "Starting PCAngsd analysis..."
-    pcangsd \\
-        -b ${beagle_file} \\
-        -t ${task.cpus} \\
-        -o ${output_prefix}.pcangsd \\
-        --tree \\
-        --maf_save \\
-        --pi_save \\
-        --admix \\
-        --admix_auto 10 \\
+    pcangsd \
+        -b ${beagle_file} \
+        -t ${task.cpus} \
+        -o ${output_prefix}.pcangsd \
+        --tree \
+        --maf-save \
+        --pi-save \
+        --admix \
+        --admix-alpha 0.1 \
         2>&1 | tee ${output_prefix}.pcangsd.log
     
+        #--admix-auto 10 \\
+
     PCANGSD_EXIT=\$?
     
     echo "PCAngsd exit status: \$PCANGSD_EXIT"
