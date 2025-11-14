@@ -52,10 +52,10 @@ process PCANGSD {
         -t ${task.cpus} \
         -o ${output_prefix}.pcangsd \
         --tree \
-        --maf_save \
-        --pi_save \
+        --maf-save \
+        --pi-save \
         --admix \
-        --admix_auto 10 \
+        --admix-auto 10 \
         2>&1 | tee ${output_prefix}.pcangsd.log
     
     PCANGSD_EXIT=\$?
