@@ -312,7 +312,7 @@ PYTHON_CONFIG
         ' | bgzip > "${chunk_id}.beagle.gz"
 
     else
-        echo "Skipping Beagle reheader (missing $RAW_BEAGLE or bam.list)"
+        echo "Skipping Beagle reheader (missing ${chunk_id}_raw.beagle.gz or bam.list)"
     fi
     
     # Beagle is already handled separately (reheadered from RAW_PREFIX.beagle.gz)
