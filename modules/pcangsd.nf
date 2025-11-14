@@ -49,6 +49,13 @@ process PCANGSD {
         echo "ERROR: Beagle file is empty!"
         exit 1
     fi
+
+    # Extracts every other sample name (since diploid samples appear twice)
+    zcat ${beagle_file} | head -n1 | awk '{
+        for(i=4; i<=NF; i+=2) {
+            print $i
+        }
+    }' > sample_names.txt
     
     # Run PCAngsd with all requested analyses
     echo "Starting PCAngsd analysis..."
@@ -125,23 +132,7 @@ EOF
     cat ${output_prefix}_pcangsd_summary.txt
     echo "========================================"
     
-    # Run R plotting script if covariance matrix exists
-    if [ -f "${output_prefix}.pcangsd.cov" ]; then
-        echo ""
-        echo "Generating visualization plots..."
-        
-        # Copy the R script from the module directory
-        cp ${projectDir}/modules/pcangsd_plots.R .
-        
-        # Run R script with output prefix and sample names
-        Rscript pcangsd_plots.R ${output_prefix} sample_names.txt
-        
-        if [ \$? -eq 0 ]; then
-            echo "Visualization plots created successfully!"
-        else
-            echo "WARNING: R plotting script failed, but PCAngsd analysis completed successfully"
-        fi
-    fi
+    #PUT R CHUNK HERE
     
     echo "PCAngsd analysis complete!"
     """
