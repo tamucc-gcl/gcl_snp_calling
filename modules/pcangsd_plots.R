@@ -10,7 +10,7 @@ library(patchwork)
 library(ggrepel)
 suppressMessages(suppressWarnings(library(ggtree)))
 suppressMessages(suppressWarnings(library(treeio)))
-suppressMessages(suppressWarnings(library(tidytree)))
+# suppressMessages(suppressWarnings(library(tidytree)))
 
 args <- commandArgs(trailingOnly = TRUE)
 if (length(args) < 2) {
@@ -214,7 +214,7 @@ if (file.exists(tree_file)) {
   cat("Saving tree plot...\n")
   ggsave(
     paste0(output_prefix, "_pcangsd_tree.png"),
-    p_admix,
+    tree_plot,
     width = 6,
     height = 6,
     dpi = 300
