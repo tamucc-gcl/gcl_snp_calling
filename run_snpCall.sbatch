@@ -197,8 +197,8 @@ CMD="${CMD} --bams ./data/bam/*.bam"
 CMD="${CMD} --reference ./genome/genome.fa"
 CMD="${CMD} --genotyper ${GENOTYPER}"
 CMD="${CMD} --num_chunks ${N_CHUNKS}"
-CMD="${CMD} --output_dir 'results'"
-CMD="${CMD} --output_vcf '${OUTPUT_VCF}'"  # Used for both genotypers
+CMD="${CMD} --output_dir results"
+CMD="${CMD} --output_vcf ${OUTPUT_VCF}"  # Used for both genotypers
 
 # Add BAM filter config if it exists
 if [ -f "${BAM_FILTER}" ]; then
