@@ -280,7 +280,7 @@ elif [ "${GENOTYPER}" = "angsd" ]; then
     fi
     echo "  - ${OUTPUT_PREFIX}.sites (positions file)"
     echo "  - ${OUTPUT_PREFIX}_summary.txt (run summary)"
-#fi
+fi
 
 echo ""
 echo "================================================================"
