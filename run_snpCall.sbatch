@@ -195,7 +195,7 @@ CMD="${CMD} -profile slurm"
 CMD="${CMD} -resume"
 
 BAM_PATTERN="./data/bam/*.bam"
-CMD="${CMD} --bams '${BAM_PATTERN}'"
+CMD="${CMD} --bams ${BAM_PATTERN}"
 #CMD="${CMD} --bams ./data/bam/*.bam"
 CMD="${CMD} --reference ./genome/genome.fa"
 CMD="${CMD} --genotyper ${GENOTYPER}"
