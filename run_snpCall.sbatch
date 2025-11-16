@@ -193,7 +193,7 @@ fi
 CMD="nextflow run gcl_snp_calling/main.nf"
 CMD="${CMD} -profile slurm"
 CMD="${CMD} -resume"
-CMD="${CMD} --bams \"./data/bam/*.bam\""
+#CMD="${CMD} --bams ./data/bam/*.bam"
 CMD="${CMD} --reference ./genome/genome.fa"
 CMD="${CMD} --genotyper ${GENOTYPER}"
 CMD="${CMD} --num_chunks ${N_CHUNKS}"
@@ -292,7 +292,7 @@ echo "================================================================"
 echo ""
 
 # Execute the pipeline
-${CMD}
+${CMD} --bams "./data/bam/*.bam"
 
 # Check exit status
 EXIT_CODE=$?
