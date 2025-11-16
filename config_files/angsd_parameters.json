@@ -32,7 +32,7 @@
     "comment_minInd": "Minimum number of individuals required to have data at a site",
     "setMinDepth": 0,
     "comment_setMinDepth": "Minimum total depth across all samples",
-    "setMaxDepth": 0,
+    "setMaxDepth": 1000,
     "comment_setMaxDepth": "Maximum total depth to avoid repetitive regions",
     "setMinDepthInd": 1,
     "comment_setMinDepthInd": "Minimum reads per individual to include them at a site",

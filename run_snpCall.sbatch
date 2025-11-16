@@ -68,7 +68,7 @@ OUTPUT_VCF="raw_variants.vcf.gz"  # Default output name for both genotypers
 # Check if using legacy format (positional arguments)
 if [[ $# -gt 0 && "$1" != "-"* ]]; then
     echo "Detected legacy command format - converting to new format"
-    
+
     # Legacy format: <freebayes_params> <bam_filter_params> <nChunks> [ploidy_map]
     CONFIG_FILE="${1:-gcl_snp_calling/freebayes_parameters.json}"
     BAM_FILTER="${2:-gcl_snp_calling/bam_filter_parameters.json}"
@@ -76,7 +76,7 @@ if [[ $# -gt 0 && "$1" != "-"* ]]; then
     PLOIDY_MAP="${4:-}"
     GENOTYPER="freebayes"
     OUTPUT_VCF="raw_variants.vcf.gz"  # Use default for legacy format
-    
+
     echo "Legacy parameters interpreted as:"
     echo "  FreeBayes config: ${CONFIG_FILE}"
     echo "  BAM filter: ${BAM_FILTER}"
@@ -89,14 +89,14 @@ else
     TEMP=$(getopt -o g:c:b:n:p:s:o:h \
                   --long genotyper:,config:,bam-filter:,chunks:,ploidy-map:,sites:,output:,help \
                   -n 'run_snpCall.sbatch' -- "$@")
-    
+
     if [ $? != 0 ]; then
         echo "Error parsing arguments. Use -h for help." >&2
         exit 1
     fi
-    
+
     eval set -- "$TEMP"
-    
+
     while true; do
         case "$1" in
             -g|--genotyper)
@@ -210,14 +210,14 @@ if [ "${GENOTYPER}" = "freebayes" ]; then
     echo ""
     echo "FreeBayes-specific settings:"
     echo "----------------------------"
-    
+
     # Add FreeBayes config
     if [ -f "${CONFIG_FILE}" ]; then
         CMD="${CMD} --freebayes_config ${CONFIG_FILE}"
     fi
-    
+
     echo "Output VCF: ${OUTPUT_VCF}"
-    
+
     # Add ploidy map if provided
     if [ -n "${PLOIDY_MAP}" ] && [ -f "${PLOIDY_MAP}" ]; then
         echo "Ploidy map: ${PLOIDY_MAP}"
@@ -228,16 +228,16 @@ if [ "${GENOTYPER}" = "freebayes" ]; then
     else
         echo "Ploidy: Using global setting from config or FreeBayes default (diploid)"
     fi
-    
+
 elif [ "${GENOTYPER}" = "angsd" ]; then
     echo ""
     echo "ANGSD-specific settings:"
     echo "------------------------"
-    
+
     # Add ANGSD config
     if [ -f "${CONFIG_FILE}" ]; then
         CMD="${CMD} --angsd_config ${CONFIG_FILE}"
-        
+
         # Check if config specifies pooled mode
         IS_POOLED=$(grep -o '"is_pooled"[[:space:]]*:[[:space:]]*true' "${CONFIG_FILE}" || echo "")
         if [ -n "${IS_POOLED}" ]; then
@@ -246,9 +246,9 @@ elif [ "${GENOTYPER}" = "angsd" ]; then
             echo "Mode: Individual samples"
         fi
     fi
-    
+
     echo "Output base name: ${OUTPUT_PREFIX}"
-    
+
     # Add sites file if provided
     if [ -n "${SITES_FILE}" ] && [ -f "${SITES_FILE}" ]; then
         echo "Sites file: ${SITES_FILE}"
@@ -257,7 +257,7 @@ elif [ "${GENOTYPER}" = "angsd" ]; then
     else
         echo "Sites: Will discover from data"
     fi
-    
+
     # Show expected outputs
     echo ""
     echo "Expected output files:"
@@ -266,8 +266,8 @@ elif [ "${GENOTYPER}" = "angsd" ]; then
     echo "  - ${OUTPUT_PREFIX}.vcf.gz (VCF format)"
     echo "  - ${OUTPUT_PREFIX}.sites (positions file)"
     echo "  - ${OUTPUT_PREFIX}_summary.txt (run summary)" "Sites: Will discover from data"
-    fi
-    
+#    fi
+
     # Show expected outputs
     echo ""
     echo "Expected output files:"
@@ -280,7 +280,7 @@ elif [ "${GENOTYPER}" = "angsd" ]; then
     fi
     echo "  - ${OUTPUT_PREFIX}.sites (positions file)"
     echo "  - ${OUTPUT_PREFIX}_summary.txt (run summary)"
-fi
+#fi
 
 echo ""
 echo "================================================================"
@@ -303,7 +303,7 @@ if [ ${EXIT_CODE} -eq 0 ]; then
     echo "Pipeline completed successfully!"
     echo "================================================================"
     echo "Results location: ./results/"
-    
+
     if [ "${GENOTYPER}" = "freebayes" ]; then
         echo "Main output: ./results/${OUTPUT_VCF}"
     else
@@ -312,7 +312,7 @@ if [ ${EXIT_CODE} -eq 0 ]; then
         echo "  - ./results/${OUTPUT_PREFIX}.mafs.gz"
         echo "  - ./results/${OUTPUT_PREFIX}.vcf.gz"
     fi
-    
+
     echo ""
     echo "QC Reports:"
     echo "  - ./results/multiqc_reports/multiqc_raw_bams.html"
