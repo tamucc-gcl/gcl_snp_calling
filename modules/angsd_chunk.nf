@@ -23,6 +23,7 @@ process ANGSD_CHUNK {
     echo "Processing chunk ${chunk_id} with ANGSD"
     # echo "Regions: ${regions_string}"
     echo "Reference: ${reference}"
+    touch ${reference}.fai
 
     # --- Basic BAM checks ----------------------------------------------------
     BAM_COUNT=\$(ls -1 *.bam 2>/dev/null | wc -l)
