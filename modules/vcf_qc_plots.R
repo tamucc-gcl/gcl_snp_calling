@@ -76,6 +76,8 @@ depth_data <- extract.gt(raw_vcf,
                          element = "DP", 
                          as.numeric = TRUE)
 
+depth_data[depth_data == 0] <- NA
+
 locus_missingness_plot <- depth_data %>%
   is.na() %>%
   rowMeans(na.rm = TRUE) %>%
@@ -216,6 +218,7 @@ genind2genlight <- function(gi){
 
 if(is.null(ploidy_map)){
   raw_genlight <- vcfR2genlight(raw_vcf)
+  ploidy(raw_genlight) <- max(ploidy(raw_genlight), na.rm = TRUE)
   
 } else {
   raw_genlight <- ploidy_map %>%
@@ -225,6 +228,8 @@ if(is.null(ploidy_map)){
                 ploidy = .) %>%
     genind2genlight()
 }
+
+
 
 pca_out <- glPca(raw_genlight,
                  nf = 2, 
