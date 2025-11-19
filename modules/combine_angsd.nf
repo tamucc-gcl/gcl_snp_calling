@@ -15,7 +15,7 @@ process COMBINE_ANGSD {
     path "${output_prefix}.vcf.gz.tbi", emit: vcf_index
     //path "${output_prefix}.geno.gz", emit: geno
     path "${output_prefix}.counts.gz", emit: counts, optional: true
-    path "${output_prefix}.qs", emit: qual_stats, optional: true
+    path "${output_prefix}.qs.gz", emit: qual_stats, optional: true
     //path "${output_prefix}.hwe.gz", emit: hwe //merged into counts
     //path "${output_prefix}.snpStat.gz", emit: snp_stats //merged into counts
 
@@ -122,7 +122,31 @@ process COMBINE_ANGSD {
 
 
     # Combine QS files
-    # path "${output_prefix}.qs", emit: qual_stats
+    echo "Checking for QS files..."
+    ls chunk_*.qs 2>/dev/null | sort -V > qs_files.txt || true
+    
+    if [ -s qs_files.txt ]; then
+        echo "Combining QS files..."
+        
+        # Get header from the first qs file
+        first_qs=$(head -n1 qs_files.txt)
+        head -n1 "$first_qs" > "${output_prefix}.qs"
+        
+        # Combine data (skip header line for each chunk)
+        while read -r file; do
+            tail -n +2 "$file" >> "${output_prefix}.qs"
+        done < qs_files.txt
+        
+        # Compress combined qs
+        bgzip -f "${output_prefix}.qs"
+        
+        TOTAL_QS=$(zcat "${output_prefix}.qs.gz" | tail -n +2 | wc -l)
+        echo "Total sites in QS file: $TOTAL_QS"
+    else
+        echo "No QS files found - creating empty file"
+        # Create an empty bgzipped qs file (no header since none exists)
+        bgzip -c /dev/null > "${output_prefix}.qs.gz"
+    fi
 
 
     # Handle BCF files and convert to VCF
