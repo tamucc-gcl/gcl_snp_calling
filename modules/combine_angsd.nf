@@ -99,19 +99,19 @@ process COMBINE_ANGSD {
         echo "Combining Count files..."
         
         # Get header from the first counts file
-        first_counts=$(head -n1 counts_files.txt)
-        zcat "$first_counts" | head -n1 > "${output_prefix}.counts"
+        first_counts=\$(head -n1 counts_files.txt)
+        zcat "\$first_counts" | head -n1 > "${output_prefix}.counts"
         
         # Combine data (skip header line for each chunk)
         while read -r file; do
-            zcat "$file" | tail -n +2 >> "${output_prefix}.counts"
+            zcat "\$file" | tail -n +2 >> "${output_prefix}.counts"
         done < counts_files.txt
         
         # Compress combined counts
         bgzip -f "${output_prefix}.counts"
         
         TOTAL_COUNTS=$(zcat "${output_prefix}.counts.gz" | tail -n +2 | wc -l)
-        echo "Total sites in COUNT file: $TOTAL_COUNTS"
+        echo "Total sites in COUNT file: \$TOTAL_COUNTS"
     else
         echo "No COUNT files found - creating empty file"
         # Create an empty bgzipped counts file (no header since none exists)
