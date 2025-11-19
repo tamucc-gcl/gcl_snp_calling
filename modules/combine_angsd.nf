@@ -129,19 +129,19 @@ process COMBINE_ANGSD {
         echo "Combining QS files..."
         
         # Get header from the first qs file
-        first_qs=$(head -n1 qs_files.txt)
-        head -n1 "$first_qs" > "${output_prefix}.qs"
+        first_qs=\$(head -n1 qs_files.txt)
+        head -n1 "\$first_qs" > "${output_prefix}.qs"
         
         # Combine data (skip header line for each chunk)
         while read -r file; do
-            tail -n +2 "$file" >> "${output_prefix}.qs"
+            tail -n +2 "\$file" >> "${output_prefix}.qs"
         done < qs_files.txt
         
         # Compress combined qs
         bgzip -f "${output_prefix}.qs"
         
-        TOTAL_QS=$(zcat "${output_prefix}.qs.gz" | tail -n +2 | wc -l)
-        echo "Total sites in QS file: $TOTAL_QS"
+        TOTAL_QS=\$(zcat "${output_prefix}.qs.gz" | tail -n +2 | wc -l)
+        echo "Total sites in QS file: \$TOTAL_QS"
     else
         echo "No QS files found - creating empty file"
         # Create an empty bgzipped qs file (no header since none exists)
