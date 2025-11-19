@@ -13,6 +13,12 @@ process COMBINE_ANGSD {
     path "${output_prefix}.mafs.gz", emit: mafs
     path "${output_prefix}.vcf.gz", emit: vcf
     path "${output_prefix}.vcf.gz.tbi", emit: vcf_index
+    //path "${output_prefix}.geno.gz", emit: geno
+    path "${output_prefix}.counts.gz", emit: counts
+    path "${output_prefix}.qs", emit: qual_stats
+    //path "${output_prefix}.hwe.gz", emit: hwe //merged into counts
+    //path "${output_prefix}.snpStat.gz", emit: snp_stats //merged into counts
+
     //path "${output_prefix}.sites", emit: sites
     //path "${output_prefix}_summary.txt", emit: summary
     
@@ -84,7 +90,41 @@ process COMBINE_ANGSD {
         echo "No MAF files found - creating empty file"
         echo "chromo\tposition\tmajor\tminor\tref\tanc\tknownEM\tnInd" | bgzip > ${output_prefix}.mafs.gz
     fi
+
+    # Combine Count files
+    echo "Checking for Count files..."
+    ls chunk_*.counts.gz 2>/dev/null | sort -V > counts_files.txt || true
     
+    if [ -s counts_files.txt ]; then
+        echo "Combining Count files..."
+        
+        # Get header from the first counts file
+        first_counts=$(head -n1 counts_files.txt)
+        zcat "$first_counts" | head -n1 > "${output_prefix}.counts"
+        
+        # Combine data (skip header line for each chunk)
+        while read -r file; do
+            zcat "$file" | tail -n +2 >> "${output_prefix}.counts"
+        done < counts_files.txt
+        
+        # Compress combined counts
+        bgzip -f "${output_prefix}.counts"
+        
+        TOTAL_COUNTS=$(zcat "${output_prefix}.counts.gz" | tail -n +2 | wc -l)
+        echo "Total sites in COUNT file: $TOTAL_COUNTS"
+    else
+        echo "No COUNT files found - creating empty file"
+        # Create an empty bgzipped counts file (no header since none exists)
+        bgzip -c /dev/null > "${output_prefix}.counts.gz"
+    fi
+    
+    # Combine Geno Files
+
+
+    # Combine QS files
+    # path "${output_prefix}.qs", emit: qual_stats
+
+
     # Handle BCF files and convert to VCF
     echo "Processing BCF files..."
     

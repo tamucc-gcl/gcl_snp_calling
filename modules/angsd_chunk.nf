@@ -316,6 +316,73 @@ PYTHON_CONFIG
         echo "Skipping Beagle reheader (missing ${chunk_id}_raw.beagle.gz or bam.list)"
     fi
     
+    # Join pos, counts, hwe, snpStat files
+    # Reheader counts sample names and join with positions using bam.list
+    if [ -f "${chunk_id}_raw.counts.gz" ] && [ -f "bam.list" ]; then
+        echo "Reheadering Beagle sample names based on bam.list"
+
+        # Build clean sample names:
+        : > samples.txt
+        while read -r bam; do
+            base=\$(basename "\$bam")
+            base=\${base%.bam}
+            base=\${base%.filtered}
+            echo "\$base" >> samples.txt
+        done < bam.list
+
+        if [ -f "${chunk_id}_raw.hwe.gz" ] && [ -f "${chunk_id}_raw.snpStat.gz" ]; then
+            paste \
+            <(zcat "${chunk_id}_raw.pos.gz") \
+            <(
+                zcat "${chunk_id}_raw.counts.gz"  | \
+                awk -v names="\$(sed 's/$/_depth/' samples.txt | tr '\n' ' ')" '
+                    BEGIN { FS = OFS = "\t" }
+                    NR==1 {
+                        n = split(names, a, " ")
+                        # rename header to be the individual names
+                        out = a[1]
+                        for (i = 2; i <= n; i++) {
+                            out = out OFS a[i]
+                        }
+                        print out
+                        next
+                    }
+                    { print }
+                ' \
+                | sed 's/\t*\$//'
+            ) \
+            <(zcat "${chunk_id}_raw.hwe.gz" | cut -f3-) \
+            <(zcat "${chunk_id}_raw.snpStat.gz" | cut -f3- | sed 's/\t*\$//') \
+            | bgzip > "${chunk_id}.counts.gz"
+        else
+           paste \
+            <(zcat "${chunk_id}_raw.pos.gz") \
+            <(
+                zcat "${chunk_id}_raw.counts.gz"  | \
+                awk -v names="\$(sed 's/$/_depth/' samples.txt | tr '\n' ' ')" '
+                    BEGIN { FS = OFS = "\t" }
+                    NR==1 {
+                        n = split(names, a, " ")
+                        # rename header to be the individual names
+                        out = a[1]
+                        for (i = 2; i <= n; i++) {
+                            out = out OFS a[i]
+                        }
+                        print out
+                        next
+                    }
+                    { print }
+                ' \
+                | sed 's/\t*\$//'
+            ) \
+            | bgzip > "${chunk_id}.counts.gz"
+        fi
+
+
+    else
+        echo "Skipping Count reheader (missing ${chunk_id}_raw.counts.gz or bam.list)"
+    fi
+
     # Beagle is already handled separately (reheadered from RAW_PREFIX.beagle.gz)
     # Now map the rest of the ANGSD outputs to the clean names
     for ext in mafs.gz bcf geno.gz depthSample depthGlobal arg; do

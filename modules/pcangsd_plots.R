@@ -89,7 +89,7 @@ p1 <- pca_data %>%
                   hjust = 'inward',
                   vjust = 'inward') +
   labs(x = paste0('PC1 (', pct_var[1], ")"),
-       y = paste0('PC2 (', pct_var[2], ")")) +  # Fixed typo: PC2 instead of PC1
+       y = paste0('PC2 (', pct_var[2], ")")) +
   theme_classic(base_size = 16) +
   theme(panel.background = element_rect(colour = 'black')) 
 
@@ -103,8 +103,8 @@ p2 <- pca_data %>%
                   aes(label = sample_id),
                   hjust = 'inward',
                   vjust = 'inward') +
-  labs(x = paste0('PC1 (', pct_var[1], ")"),
-       y = paste0('PC2 (', pct_var[2], ")")) +  # Fixed typo: PC2 instead of PC1
+  labs(x = paste0('PC3 (', pct_var[3], ")"),
+       y = paste0('PC4 (', pct_var[4], ")")) +
   theme_classic(base_size = 16) +
   theme(panel.background = element_rect(colour = 'black')) 
 

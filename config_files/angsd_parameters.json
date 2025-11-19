@@ -60,8 +60,8 @@
     "comment": "SNP discovery and filtering options",
     "doMajorMinor": 1,
     "comment_doMajorMinor": "How to infer major/minor alleles: 1=from GL, 2=from counts, 3=use reference, 4=use ancestral, 5=effective major/minor",
-    "doMaf": 3,
-    "comment_doMaf": "Calculate allele frequencies: 0=none, 1=known major/minor, 2=known ancestral, 3=EM algorithm",
+    "doMaf": 11,
+    "comment_doMaf": "Calculate allele frequencies: https://www.popgen.dk/angsd/index.php/Allele_Frequencies",
     "SNP_pval": 1e-6,
     "comment_SNP_pval": "P-value threshold for SNP calling (1e-6 = standard, 1=no filtering)",
     "skipTriallelic": 1,
@@ -84,8 +84,8 @@
   
   "output_options": {
     "comment": "Additional output control",
-    "dumpCounts": 0,
-    "comment_dumpCounts": "Output allele counts: 0=none, 1=total counts, 2=counts per sample, 3=both",
+    "dumpCounts": 2,
+    "comment_dumpCounts": "Output allele counts: https://www.popgen.dk/angsd/index.php/Allele_Counts",
     "doDepth": 1,
     "comment_doDepth": "1=Calculate and output depth statistics",
     "maxDepth": 1000,
