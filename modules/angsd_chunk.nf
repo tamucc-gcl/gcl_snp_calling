@@ -359,7 +359,7 @@ PYTHON_CONFIG
             <(zcat "${chunk_id}_raw.pos.gz") \
             <(
                 zcat "${chunk_id}_raw.counts.gz"  | \
-                awk -v names="\$(sed 's/$/_depth/' samples.txt | tr '\n' ' ')" '
+                awk -v names="\$(sed 's/\$/_depth/' samples.txt | tr '\n' ' ')" '
                     BEGIN { FS = OFS = "\t" }
                     NR==1 {
                         n = split(names, a, " ")
