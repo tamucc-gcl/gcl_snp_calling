@@ -206,6 +206,12 @@ try:
         params.append(f"-doDepth {outopt['doDepth']}")
     if has(outopt, "maxDepth"):
         params.append(f"-maxDepth {outopt['maxDepth']}")
+    if has(outopt, "doQsDist"):
+        params.append(f"-doQsDist {outopt['doQsDist']}")
+    if has(outopt, "dosnpstat"):
+        params.append(f"-dosnpstat {outopt['dosnpstat']}")
+    if has(outopt, "doHWE"):
+        params.append(f"-doHWE {outopt['doHWE']}")
 
     # ------------- Minimal Beagle + BCF enforcement -------------
     # We ONLY auto-add things required to ensure Beagle and BCF exist.

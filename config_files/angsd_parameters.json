@@ -89,6 +89,12 @@
     "doDepth": 1,
     "comment_doDepth": "1=Calculate and output depth statistics",
     "maxDepth": 1000,
-    "comment_maxDepth": "Maximum depth for statistics calculations"
+    "comment_maxDepth": "Maximum depth for statistics calculations",
+    "doQsDist": 1,
+    "comment_doQsDist": "1=Calculate and output quality stats",
+    "dosnpstat": 1,
+    "comment_dosnpstat": "1=Calculate and output snp statistics - requires doHWE",
+    "doHWE": 1,
+    "comment_doHWE": "1=Calculate and output HWE statistics"
   }
 }

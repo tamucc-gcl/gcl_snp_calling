@@ -10,12 +10,12 @@ process COMBINE_ANGSD {
     
     output:
     path "${output_prefix}.beagle.gz", emit: beagle
-    path "${output_prefix}.mafs.gz", emit: mafs
+    path "${output_prefix}.mafs.gz", emit: mafs, optional: true
     path "${output_prefix}.vcf.gz", emit: vcf
     path "${output_prefix}.vcf.gz.tbi", emit: vcf_index
     //path "${output_prefix}.geno.gz", emit: geno
-    path "${output_prefix}.counts.gz", emit: counts
-    path "${output_prefix}.qs", emit: qual_stats
+    path "${output_prefix}.counts.gz", emit: counts, optional: true
+    path "${output_prefix}.qs", emit: qual_stats, optional: true
     //path "${output_prefix}.hwe.gz", emit: hwe //merged into counts
     //path "${output_prefix}.snpStat.gz", emit: snp_stats //merged into counts
 
