@@ -51,9 +51,13 @@
     "doPost": 1,
     "comment_doPost": "Posterior genotype probability: 0=none, 1=use HWE prior, 2=use estimated allele freq",
     "geno_minDepth": 5,
-    "comment_geno_minDepth": "Minimum depth required to call a genotype (only used when doGeno>0)",
+    "comment_geno_minDepth": "set genotypes to missing if the individual depth is less than [int] https://www.popgen.dk/angsd/index.php/Genotype_calling",
+    "geno_maxDepth": 5,
+    "comment_geno_maxDepth": "set genotypes to missing if the individual depth is larger than [int] https://www.popgen.dk/angsd/index.php/Genotype_calling",
     "geno_minMM": 0.1,
-    "comment_geno_minMM": "Minimum posterior probability to call a genotype (0.1=10% confidence threshold)"
+    "comment_geno_minMM": "set genotypes to missing if less than [float] of the bases are the major or minor (likely a triallic site). e.g. 0.1 means that less than 10% of reads in this individual is either the major or the minor https://www.popgen.dk/angsd/index.php/Genotype_calling",
+    "postCutoff": 0,
+    "comment_postCutoff": "Call only a genotype with a posterior above this threshold.; NB if the raw posterior dump is requested the -postCutoff is not used https://www.popgen.dk/angsd/index.php/Genotype_calling"
   },
   
   "snp_calling": {

@@ -170,8 +170,12 @@ try:
         doPost_set = True
     if has(glopts, "geno_minDepth"):
         params.append(f"-geno_minDepth {glopts['geno_minDepth']}")
+    if has(glopts, "geno_maxDepth"):
+        params.append(f"-geno_maxDepth {glopts['geno_maxDepth']}")
     if has(glopts, "geno_minMM"):
         params.append(f"-geno_minMM {glopts['geno_minMM']}")
+    if has(glopts, "geno_postCutoff"):
+        params.append(f"-geno_postCutoff {glopts['geno_postCutoff']}")
 
     # ------------- SNP CALLING ---------------
     if has(snp, "doMajorMinor"):

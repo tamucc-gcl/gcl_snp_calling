@@ -63,6 +63,8 @@ process PCANGSD {
         -b ${beagle_file} \
         -t ${task.cpus} \
         -o ${output_prefix}.pcangsd \
+        --maf-iter 1000 \
+        --iter 1000 \
         --tree \
         --maf-save \
         --pi-save \
