@@ -128,7 +128,7 @@ p3 <- ggplot(scree_data, aes(x = PC, y = variance)) +
   theme(panel.border = element_rect(fill = NA, color = "black"))
 
 # Combine plots
-combined_pca <- (p1 | p2) / p3 +
+combined_pca <- (p1 | p2) +#/ p3 +
   plot_annotation(
     title = "PCAngsd Population Structure Analysis",
     subtitle = paste0("Based on genotype likelihoods from ", n_samples, " samples")
