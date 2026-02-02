@@ -80,7 +80,7 @@ depth_data[depth_data == 0] <- NA
 
 locus_missingness_plot <- depth_data %>%
   is.na() %>%
-  rowMeans(na.rm = TRUE) %>%
+  rowMeans(na.rm = TRUE) %>% #mean
   enframe(name = 'locus',
           value = 'pct_samples_missing') %>%
   ggplot(aes(x = pct_samples_missing)) +
@@ -93,7 +93,7 @@ locus_missingness_plot <- depth_data %>%
 
 sample_missingness_plot <- depth_data %>%
   is.na() %>%
-  colMeans(na.rm = TRUE) %>%
+  colMeans(na.rm = TRUE) %>% #mean
   enframe(name = 'sample',
           value = 'pct_samples_missing') %>%
   ggplot(aes(x = pct_samples_missing)) +
@@ -229,8 +229,8 @@ if(is.null(ploidy_map)){
     genind2genlight()
 }
 
-
-
+#toRemove <- is.na(glMean(raw_genlight, alleleAsUnit = FALSE))
+#raw_genlight[, !toRemove]
 pca_out <- glPca(raw_genlight,
                  nf = 2, 
                  loadings = FALSE)
