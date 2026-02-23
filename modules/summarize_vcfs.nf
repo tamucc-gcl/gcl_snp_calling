@@ -17,10 +17,6 @@ process SUMMARIZE_VCFS {
     """
     # Generate bcftools stats
     bcftools stats ${vcf} > ${vcf.simpleName}.stats.txt
-
-    # Run R script for QC plots
-    # Copy the R script from the module directory
-    cp ${projectDir}/modules/vcf_qc_plots.R .
     
     # Check if VCF has enough variants for analysis
     VARIANT_COUNT=\$(zcat ${vcf} | grep -v '^#' | wc -l)
@@ -33,7 +29,7 @@ process SUMMARIZE_VCFS {
     if [ \$VARIANT_COUNT -gt 10 ]; then
         echo "Running QC plot generation..."
         # Pass the ploidy argument directly without bash variable expansion issues
-        Rscript vcf_qc_plots.R ${vcf} ${vcf.simpleName} ${ploidy_arg}
+        Rscript ${projectDir}/r_scripts/vcf_qc_plots.R ${vcf} ${vcf.simpleName} ${ploidy_arg}
     else
         echo "Too few variants (\$VARIANT_COUNT) for meaningful QC plots. Creating placeholder images..."
         
