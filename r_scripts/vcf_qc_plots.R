@@ -37,6 +37,7 @@ library(readr)
 library(scales)
 library(purrr)
 library(MASS)
+select <- dplyr::select
 
 #### Helper functions ####
 
