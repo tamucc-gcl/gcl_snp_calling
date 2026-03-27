@@ -260,7 +260,7 @@ if (!is.null(site_qc_tbl)) {
   
   locus_qc <- site_qc_tbl %>%
     mutate(
-      locus = paste(chromo, position, sep = ":"),
+      locus = paste(chromo, position, sep = "_"),
       af = if ("AF" %in% names(.)) extract_first_af(AF) else NA_real_
     ) %>%
     select(any_of(c("locus", "chromo", "position", "REF", "ALT", "QUAL", "FILTER", "NS", "DP", "af"))) %>%
@@ -350,39 +350,36 @@ sample_qc <- sample_qc %>%
 if (!is.null(freq_tbl)) {
   cat("Attempting to parse MAF from frequency table\n")
   
-  if (all(c("CHROM", "POS") %in% names(freq_tbl))) {
-    freq_long <- freq_tbl %>%
+  if (all(c("CHROM", "POS", "{ALLELE:FREQ}") %in% names(freq_tbl))) {
+    
+    maf_tbl <- freq_tbl %>%
       mutate(
-        locus = paste(CHROM, POS, sep = ":")
-      )
+        locus = paste(CHROM, POS, sep = "_"),
+        allele_freq_string = `{ALLELE:FREQ}`
+      ) %>%
+      mutate(
+        allele_freq_list = stringr::str_split(allele_freq_string, "\t"),
+        maf_from_freq = purrr::map_dbl(allele_freq_list, function(x) {
+          freqs <- stringr::str_extract(x, "(?<=:)[0-9.]+")
+          freqs <- suppressWarnings(as.numeric(freqs))
+          freqs <- freqs[!is.na(freqs)]
+          
+          if (length(freqs) == 0) {
+            return(NA_real_)
+          }
+          
+          min(freqs)
+        })
+      ) %>%
+      select(locus, maf_from_freq)
     
-    allele_cols <- setdiff(names(freq_long), c("CHROM", "POS", "N_ALLELES", "N_CHR", "locus"))
-    
-    if (length(allele_cols) > 0) {
-      maf_tbl <- freq_long %>%
-        pivot_longer(
-          cols = all_of(allele_cols),
-          names_to = "allele_col",
-          values_to = "allele_freq_raw"
-        ) %>%
-        mutate(
-          allele_freq = str_extract(allele_freq_raw, "[0-9.eE+-]+$"),
-          allele_freq = suppressWarnings(as.numeric(allele_freq))
-        ) %>%
-        filter(!is.na(allele_freq)) %>%
-        group_by(locus) %>%
-        summarise(
-          maf_from_freq = min(allele_freq, 1 - allele_freq, na.rm = TRUE),
-          .groups = "drop"
-        )
-      
-      locus_qc <- locus_qc %>%
-        left_join(maf_tbl, by = "locus") %>%
-        mutate(maf = coalesce(maf_from_freq, maf)) %>%
-        select(-maf_from_freq)
-    }
+    locus_qc <- locus_qc %>%
+      left_join(maf_tbl, by = "locus") %>%
+      mutate(maf = coalesce(maf_from_freq, maf)) %>%
+      select(-maf_from_freq)
   }
 }
+
 
 #### Save derived tables ####
 readr::write_tsv(sample_qc, paste0(output_prefix, "_sample_qc_derived.tsv"))
@@ -513,7 +510,7 @@ ranked_sample_qc_plot <- sample_qc %>%
   ggplot(aes(x = rank, y = number_loci)) +
   geom_segment(aes(xend = rank, y = 0, yend = number_loci),
                linewidth = 0.3) +
-  geom_point(aes(color = flag_high_missing), size = 1.5) +
+  geom_point(aes(color = flag_high_missing), size = 1.5, show.legend = FALSE) +
   scale_color_manual(values = c(`TRUE` = "firebrick", `FALSE` = "black")) +
   scale_y_continuous(labels = scales::comma_format()) +
   labs(
@@ -549,7 +546,7 @@ sample_mean_depth_plot <- sample_qc %>%
   ggplot(aes(x = rank, y = mean_depth_called)) +
   geom_segment(aes(xend = rank, y = 0, yend = mean_depth_called),
                linewidth = 0.3) +
-  geom_point(aes(color = flag_low_depth), size = 1.5) +
+  geom_point(aes(color = flag_low_depth), size = 1.5, show.legend = FALSE) +
   scale_color_manual(values = c(`TRUE` = "firebrick", `FALSE` = "black")) +
   scale_y_continuous(labels = scales::comma_format()) +
   labs(
@@ -565,7 +562,7 @@ maf_plot <- locus_qc %>%
   geom_histogram(bins = 60) +
   geom_vline(xintercept = c(0.01, 0.05, 0.1),
              linetype = "dashed") +
-  scale_x_continuous(labels = scales::number_format(accuracy = 0.01),
+  scale_x_continuous(labels = scales::percent_format(accuracy = 1),
                      limits = c(0, 0.5)) +
   scale_y_continuous(labels = scales::comma_format()) +
   labs(
