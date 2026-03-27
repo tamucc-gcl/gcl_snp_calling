@@ -321,6 +321,7 @@ workflow {
         SUMMARIZE_VCFS.out[1],   // site_qc.tsv.gz
         SUMMARIZE_VCFS.out[2]    // sample_qc.tsv.gz
     )
+}
 
 workflow.onComplete {
     // Derive output prefix for completion message
