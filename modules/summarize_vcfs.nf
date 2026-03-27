@@ -42,12 +42,12 @@ process SUMMARIZE_VCFS {
             -x INFO/AF,INFO/AC,INFO/AN,INFO/NS,INFO/MAF,INFO/F_MISSING \
             -Oz -o ${vcf.simpleName}.summary_input.vcf.gz \
             "${vcf}"
-        tabix -p vcf ${vcf.simpleName}.summary_input.vcf.gz
+        bcftools index ${vcf.simpleName}.summary_input.vcf.gz
 
         bcftools +fill-tags ${vcf.simpleName}.summary_input.vcf.gz \
             -Oz -o ${vcf.simpleName}.summary_ready.vcf.gz \
             -- -t AC,AN,AF,NS,MAF,TYPE,F_MISSING
-        tabix -p vcf ${vcf.simpleName}.summary_ready.vcf.gz
+        bcftools index ${vcf.simpleName}.summary_ready.vcf.gz
 
         SUMMARY_VCF=${vcf.simpleName}.summary_ready.vcf.gz
 
@@ -141,7 +141,7 @@ PY
         bcftools +fill-tags "${vcf}" \
             -Oz -o ${vcf.simpleName}.summary_ready.vcf.gz \
             -- -t AC,AN,AF,NS,MAF,TYPE,F_MISSING
-        tabix -p vcf ${vcf.simpleName}.summary_ready.vcf.gz
+        bcftools index ${vcf.simpleName}.summary_ready.vcf.gz
 
         SUMMARY_VCF=${vcf.simpleName}.summary_ready.vcf.gz
 
