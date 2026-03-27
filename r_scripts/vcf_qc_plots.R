@@ -505,17 +505,18 @@ distribution_shared_loci <- locus_qc %>%
   )
 
 ranked_sample_qc_plot <- sample_qc %>%
-  arrange(desc(number_loci), sample) %>%
+  arrange(number_loci, sample) %>%
   mutate(rank = row_number()) %>%
-  ggplot(aes(x = rank, y = number_loci)) +
-  geom_segment(aes(xend = rank, y = 0, yend = number_loci),
+  ggplot(aes(y = rank, x = number_loci)) +
+  geom_segment(aes(yend = rank, x = 0, xend = number_loci),
                linewidth = 0.3) +
   geom_point(aes(color = flag_high_missing), size = 1.5, show.legend = FALSE) +
   scale_color_manual(values = c(`TRUE` = "firebrick", `FALSE` = "black")) +
   scale_y_continuous(labels = scales::comma_format()) +
+  scale_x_continuous(labels = scales::comma_format()) +
   labs(
-    x = "Samples ranked by called loci",
-    y = "Number of Loci",
+    y = "Samples ranked by called loci",
+    x = "Number of Loci",
     color = "High missingness",
     subtitle = "Worst samples flagged by >30% missing loci"
   )
