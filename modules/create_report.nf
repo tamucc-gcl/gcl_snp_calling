@@ -30,7 +30,7 @@ process REPORT_SNP_CALLING_SUMMARY {
     PREFIX="${prefix}"
     CALLER="${caller}"
 
-    python3 << 'PY'
+    python3 << PY
 import csv
 import gzip
 import math
@@ -107,11 +107,11 @@ ts_tv = None
 with open(stats_txt, 'r') as fh:
     for line in fh:
         if line.startswith('SN\t'):
-            parts = line.rstrip('\n').split('\t')
+            parts = line.rstrip().split("\t")
             if len(parts) >= 4:
                 summary_numbers[parts[2].rstrip(':')] = parts[3]
         elif line.startswith('TSTV\t'):
-            parts = line.rstrip('\n').split('\t')
+            parts = line.rstrip().split("\t")
             if len(parts) >= 5:
                 ts_tv = {
                     'ts': parts[2],
