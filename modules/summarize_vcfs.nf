@@ -68,7 +68,7 @@ process SUMMARIZE_VCFS {
             "${vcf}" | bgzip -c > \${PREFIX}.site_qc.tsv.gz
 
         # Build sample table from GT/DP missingness in the summary-ready VCF.
-        python3 << 'PY'
+        python3 << PY
 import gzip
 
 vcf = "${PREFIX}.summary_ready.vcf.gz"
@@ -148,7 +148,7 @@ PY
             -f '%CHROM\t%POS\t%REF\t%ALT\t%QUAL\t%FILTER\t%INFO/NS\t%INFO/DP\t%INFO/AF\n' \
             \${PREFIX}.summary_ready.vcf.gz | bgzip -c > \${PREFIX}.site_qc.tsv.gz
 
-        python3 << 'PY'
+        python3 << PY
 import gzip
 
 vcf = "${PREFIX}.summary_ready.vcf.gz"
