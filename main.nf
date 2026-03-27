@@ -15,6 +15,7 @@ include { samtools_stats as SAMTOOLS_STATS_RAW } from './modules/samtools_stats'
 include { samtools_stats as SAMTOOLS_STATS_FILTERED } from './modules/samtools_stats'
 include { multiqc as MULTIQC_RAW_BAMS } from './modules/multiqc'
 include { multiqc as MULTIQC_FILTERED_BAMS } from './modules/multiqc'
+include { REPORT_SNP_CALLING_SUMMARY } from './modules/create_report.nf'
 
 // Parameters
 params.bams = "*.bam"
@@ -247,7 +248,8 @@ workflow {
         COMBINE_VCFS(all_vcfs, params.output_vcf)
         
         // Step 5: Summarize final VCF
-        SUMMARIZE_VCFS(COMBINE_VCFS.out.vcf, ploidy_map_ch)
+        //SUMMARIZE_VCFS(COMBINE_VCFS.out.vcf, ploidy_map_ch)
+        SUMMARIZE_VCFS(COMBINE_VCFS.out.vcf, ploidy_map_ch, Channel.value('freebayes'))
         
     } else if (params.genotyper == "angsd") {
         // ANGSD workflow
@@ -297,8 +299,27 @@ workflow {
         } else {
             ploidy_map_ch = Channel.value(file('NO_FILE'))
         }
-        SUMMARIZE_VCFS(COMBINE_ANGSD.out.vcf, ploidy_map_ch)
+        //SUMMARIZE_VCFS(COMBINE_ANGSD.out.vcf, ploidy_map_ch)
+        SUMMARIZE_VCFS(COMBINE_ANGSD.out.vcf, ploidy_map_ch, Channel.value('angsd'))
     }
+
+    REPORT_SNP_CALLING_SUMMARY(
+        raw_variants.simpleName,
+        Channel.value(caller_name),
+        SUMMARIZE_VCFS.out[0],
+        SUMMARIZE_VCFS.out[6],
+        SUMMARIZE_VCFS.out[7],
+        SUMMARIZE_VCFS.out[8],
+        SUMMARIZE_VCFS.out[12],
+        SUMMARIZE_VCFS.out[13],
+        SUMMARIZE_VCFS.out[9],
+        SUMMARIZE_VCFS.out[10],
+        SUMMARIZE_VCFS.out[3],
+        SUMMARIZE_VCFS.out[4],
+        SUMMARIZE_VCFS.out[5],
+        SUMMARIZE_VCFS.out[1],
+        SUMMARIZE_VCFS.out[2]
+    )
 }
 
 workflow.onComplete {
