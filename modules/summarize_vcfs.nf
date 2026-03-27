@@ -51,9 +51,12 @@ process SUMMARIZE_VCFS {
 
         SUMMARY_VCF=${vcf.simpleName}.summary_ready.vcf.gz
 
-        bcftools query \
-            -f '%CHROM\\t%POS\\t%REF\\t%ALT\\t%QUAL\\t%FILTER\\t%INFO/NS\\t%INFO/DP\\t%INFO/AF\\n' \
-            "${vcf}" | bgzip -c > ${vcf.simpleName}.site_qc.tsv.gz
+        {
+            printf "chromo\tposition\tREF\tALT\tQUAL\tFILTER\tNS\tDP\tAF\n"
+            bcftools query \
+                -f '%CHROM\t%POS\t%REF\t%ALT\t%QUAL\t%FILTER\t%INFO/NS\t%INFO/DP\t%INFO/AF\n' \
+                ${vcf.simpleName}.summary_ready.vcf.gz
+        } | bgzip -c > ${vcf.simpleName}.site_qc.tsv.gz
 
         python3 <<PY
 import gzip
