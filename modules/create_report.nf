@@ -31,7 +31,7 @@ process REPORT_SNP_CALLING_SUMMARY {
     python3 - \
         "${prefix}" \
         "${caller}" \
-        "${raw_vcf}" \
+        "${raw_vcf_link}" \
         "${stats_txt}" \
         "${standardized_summary}" \
         "${summary_plot}" \
@@ -55,7 +55,7 @@ from pathlib import Path
 (
     prefix,
     caller,
-    raw_vcf,
+    raw_vcf_link,
     stats_txt,
     standardized_summary,
     summary_plot,
@@ -72,7 +72,7 @@ from pathlib import Path
     sample_qc_tsv,
 ) = sys.argv[1:18]
 
-raw_vcf = Path(raw_vcf)
+raw_vcf_link = Path(raw_vcf_link)
 stats_txt = Path(stats_txt)
 standardized_summary = Path(standardized_summary)
 summary_plot = Path(summary_plot)
@@ -273,7 +273,7 @@ else:
 with open(out_md, "w") as out:
     out.write(f"# SNP calling summary report: `{prefix}`\n\n")
     out.write(f"**Caller:** `{caller}`  \n")
-    out.write(f"**Raw VCF:** [`{raw_vcf.name}`]({rel_link_root(raw_vcf)})  \n")
+    out.write(f"**Raw VCF:** [`{raw_vcf_link.name}`]({rel_link_root(raw_vcf_link)})  \n")
     out.write(f"**Primary VCF summary file:** [`{stats_txt.name}`]({rel_link_qc(stats_txt)})  \n")
     out.write(f"**Standardized summary text:** [`{standardized_summary.name}`]({rel_link_qc(standardized_summary)})\n\n")
 
@@ -343,7 +343,7 @@ with open(out_md, "w") as out:
 
     out.write("## Reproducibility notes\n\n")
     out.write(f"- Caller: `{caller}`\n")
-    out.write(f"- Raw VCF: `{raw_vcf.name}`\n")
+    out.write(f"- Raw VCF: `{raw_vcf_link.name}`\n")
     out.write(f"- Input stats summary: `{stats_txt.name}`\n")
     out.write(f"- Generated report: `{out_md.name}`\n")
 PY
