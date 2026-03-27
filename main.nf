@@ -304,23 +304,23 @@ workflow {
     }
 
     REPORT_SNP_CALLING_SUMMARY(
-        raw_variants.simpleName,
-        Channel.value(caller_name),
-        SUMMARIZE_VCFS.out[0],
-        SUMMARIZE_VCFS.out[6],
-        SUMMARIZE_VCFS.out[7],
-        SUMMARIZE_VCFS.out[8],
-        SUMMARIZE_VCFS.out[12],
-        SUMMARIZE_VCFS.out[13],
-        SUMMARIZE_VCFS.out[9],
-        SUMMARIZE_VCFS.out[10],
-        SUMMARIZE_VCFS.out[3],
-        SUMMARIZE_VCFS.out[4],
-        SUMMARIZE_VCFS.out[5],
-        SUMMARIZE_VCFS.out[1],
-        SUMMARIZE_VCFS.out[2]
+        Channel.value(output_prefix),
+        Channel.value(params.genotyper),
+        SUMMARIZE_VCFS.out[0],   // stats.txt
+        SUMMARIZE_VCFS.out[6],   // standardized_summary.txt
+        SUMMARIZE_VCFS.out[7],   // summary_plots.png
+        SUMMARIZE_VCFS.out[8],   // summary_plots_extra.png
+        SUMMARIZE_VCFS.out[9],   // pca.png
+        SUMMARIZE_VCFS.out[12],  // worst_samples.tsv
+        SUMMARIZE_VCFS.out[13],  // worst_loci.tsv
+        SUMMARIZE_VCFS.out[10],  // sample_qc_derived.tsv
+        SUMMARIZE_VCFS.out[11],  // locus_qc_derived.tsv
+        SUMMARIZE_VCFS.out[4],   // missing_indv.tsv
+        SUMMARIZE_VCFS.out[3],   // missing_site.tsv
+        SUMMARIZE_VCFS.out[5],   // freq.tsv
+        SUMMARIZE_VCFS.out[1],   // site_qc.tsv.gz
+        SUMMARIZE_VCFS.out[2]    // sample_qc.tsv.gz
     )
-}
 
 workflow.onComplete {
     // Derive output prefix for completion message
