@@ -331,8 +331,7 @@ def build_report(
         reproducibility_notes.append(f"- MAF file: `{mafs_path.name}`")
     reproducibility_notes.append(f"- Input stats summary: `{stats_txt.name}`")
     reproducibility_notes.append(f"- Generated report: `{out_md.name}`")
-    reproducibility_notes_text = "
-".join(reproducibility_notes)
+    reproducibility_notes_text = "\n".join(reproducibility_notes)
 
     report = f"""# SNP calling summary report: `{prefix}`
 
