@@ -609,16 +609,33 @@ ggsave(
 
 #### PCA ####
 
+max_loci <- 10000
+n_loci <- nrow(raw_vcf@fix)
+# keep loci with at least some variation
+maf_filter <- locus_qc$maf > 0.01
+candidate_idx <- which(maf_filter)
+
+if (length(candidate_idx) > max_loci) {
+  keep_idx <- sample(candidate_idx, max_loci)
+  cat("Subsampling loci for genlight:",
+      max_loci, "of", n_loci, "\n")
+} else {
+  keep_idx <- candidate_idx
+  cat("Using all loci for genlight:", n_loci, "\n")
+}
+
+raw_vcf_sub <- raw_vcf[keep_idx, ]
+
 # Build genlight object
 if (is.null(ploidy_map)) {
-  raw_genlight <- vcfR2genlight(raw_vcf)
+  raw_genlight <- vcfR2genlight(raw_vcf_sub)
   ploidy(raw_genlight) <- max(ploidy(raw_genlight), na.rm = TRUE)
   
 } else {
   raw_genlight <- ploidy_map %>%
     arrange(match(sample, colnames(raw_vcf@gt)[-1])) %>%
     pull(ploidy) %>%
-    vcfR2genind(raw_vcf, ploidy = .) %>%
+    vcfR2genind(raw_vcf_sub, ploidy = .) %>%
     genind2genlight()
 }
 
