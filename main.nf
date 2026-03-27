@@ -304,22 +304,9 @@ workflow {
     }
 
     REPORT_SNP_CALLING_SUMMARY(
-        Channel.value(output_prefix),
         Channel.value(params.genotyper),
-        SUMMARIZE_VCFS.out[0],   // stats.txt
-        SUMMARIZE_VCFS.out[6],   // standardized_summary.txt
-        SUMMARIZE_VCFS.out[7],   // summary_plots.png
-        SUMMARIZE_VCFS.out[8],   // summary_plots_extra.png
-        SUMMARIZE_VCFS.out[9],   // pca.png
-        SUMMARIZE_VCFS.out[12],  // worst_samples.tsv
-        SUMMARIZE_VCFS.out[13],  // worst_loci.tsv
-        SUMMARIZE_VCFS.out[10],  // sample_qc_derived.tsv
-        SUMMARIZE_VCFS.out[11],  // locus_qc_derived.tsv
-        SUMMARIZE_VCFS.out[4],   // missing_indv.tsv
-        SUMMARIZE_VCFS.out[3],   // missing_site.tsv
-        SUMMARIZE_VCFS.out[5],   // freq.tsv
-        SUMMARIZE_VCFS.out[1],   // site_qc.tsv.gz
-        SUMMARIZE_VCFS.out[2]    // sample_qc.tsv.gz
+        Channel.value("${output_prefix}.vcf.gz"),
+        SUMMARIZE_VCFS.out.report_inputs
     )
 }
 

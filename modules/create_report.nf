@@ -3,23 +3,23 @@ process REPORT_SNP_CALLING_SUMMARY {
     publishDir params.output_dir, mode: 'copy'
 
     input:
-    val prefix
     val caller
-    path raw_vcf
-    path stats_txt
-    path standardized_summary
-    path summary_plot
-    path extra_plot
-    path pca_plot
-    path worst_samples
-    path worst_loci
-    path sample_qc_derived
-    path locus_qc_derived
-    path missing_indv
-    path missing_site
-    path freq_tsv
-    path site_qc_tsv
-    path sample_qc_tsv
+    val raw_vcf_link
+    tuple val(prefix),
+          path(stats_txt),
+          path(site_qc_tsv),
+          path(sample_qc_tsv),
+          path(missing_site),
+          path(missing_indv),
+          path(freq_tsv),
+          path(standardized_summary),
+          path(summary_plot),
+          path(extra_plot),
+          path(pca_plot),
+          path(sample_qc_derived),
+          path(locus_qc_derived),
+          path(worst_samples),
+          path(worst_loci)
 
     output:
     path("${prefix}_snp_calling_report.md")

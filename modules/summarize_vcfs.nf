@@ -8,20 +8,22 @@ process SUMMARIZE_VCFS {
     val caller
 
     output:
-    path("${vcf.simpleName}.stats.txt")
-    path("${vcf.simpleName}.site_qc.tsv.gz")
-    path("${vcf.simpleName}.sample_qc.tsv.gz")
-    path("${vcf.simpleName}.missing_site.tsv")
-    path("${vcf.simpleName}.missing_indv.tsv")
-    path("${vcf.simpleName}.freq.tsv")
-    path("${vcf.simpleName}.standardized_summary.txt")
-    path("${vcf.simpleName}_summary_plots.png")
-    path("${vcf.simpleName}_summary_plots_extra.png")
-    path("${vcf.simpleName}_pca.png")
-    path("${vcf.simpleName}_sample_qc_derived.tsv")
-    path("${vcf.simpleName}_locus_qc_derived.tsv")
-    path("${vcf.simpleName}_worst_samples.tsv")
-    path("${vcf.simpleName}_worst_loci.tsv")
+    tuple val(vcf.simpleName),
+          path("${vcf.simpleName}.stats.txt"),
+          path("${vcf.simpleName}.site_qc.tsv.gz"),
+          path("${vcf.simpleName}.sample_qc.tsv.gz"),
+          path("${vcf.simpleName}.missing_site.tsv"),
+          path("${vcf.simpleName}.missing_indv.tsv"),
+          path("${vcf.simpleName}.freq.tsv"),
+          path("${vcf.simpleName}.standardized_summary.txt"),
+          path("${vcf.simpleName}_summary_plots.png"),
+          path("${vcf.simpleName}_summary_plots_extra.png"),
+          path("${vcf.simpleName}_pca.png"),
+          path("${vcf.simpleName}_sample_qc_derived.tsv"),
+          path("${vcf.simpleName}_locus_qc_derived.tsv"),
+          path("${vcf.simpleName}_worst_samples.tsv"),
+          path("${vcf.simpleName}_worst_loci.tsv"),
+          emit: report_inputs
 
     script:
     def has_ploidy_map = ploidy_map.name != 'NO_FILE'
