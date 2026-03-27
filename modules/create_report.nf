@@ -147,7 +147,7 @@ def safe_read_tsv(path: Path):
 def md_table(rows, columns, max_rows=10):
     rows = rows[:max_rows]
     if not rows or not columns:
-        return "_No rows available._\n"
+        return """_No rows available._\n"""
     header = "| " + " | ".join(columns) + " |\n"
     sep = "| " + " | ".join(["---"] * len(columns)) + " |\n"
     body = ""
