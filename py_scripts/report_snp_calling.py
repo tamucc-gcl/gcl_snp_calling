@@ -10,6 +10,25 @@ from typing import Iterable, Optional
 EXPECTED_ARG_COUNT = 17
 QC_REL_DIR = Path("snp_qc")
 
+PERCENT_COLUMNS = {
+    "pct_loci_missing",
+    "pct_samples_missing",
+}
+
+INTEGER_COLUMNS = {
+    "number_loci",
+    "number_samples_with_locus",
+}
+
+THREE_DECIMAL_COLUMNS = {
+    "maf",
+}
+
+TWO_DECIMAL_COLUMNS = {
+    "mean_depth_called",
+    "mean_depth",
+}
+
 
 def fail(msg: str) -> None:
     raise SystemExit(msg)
@@ -48,7 +67,7 @@ def num(x, digits: int = 2) -> str:
 
 def open_text_auto(path: Path):
     if path.suffix == ".gz":
-        return gzip.open(path, "rt")
+        return gzip.open(path, "rt", encoding="utf-8")
     return open(path, "r", encoding="utf-8")
 
 
@@ -99,6 +118,31 @@ def count_lt(values: Iterable[float], threshold: float) -> int:
     return sum(x < threshold for x in values)
 
 
+def format_table_value(column: str, value) -> str:
+    if value in (None, "", "NA"):
+        return "NA"
+
+    if isinstance(value, str) and value.upper() in {"TRUE", "FALSE"}:
+        return value
+
+    x = to_float(value)
+    if x is None:
+        return str(value)
+
+    if column in PERCENT_COLUMNS:
+        return pct(x, digits=1)
+    if column in INTEGER_COLUMNS:
+        return num(x, digits=0)
+    if column in THREE_DECIMAL_COLUMNS:
+        return num(x, digits=3)
+    if column in TWO_DECIMAL_COLUMNS:
+        return num(x, digits=2)
+
+    if math.isclose(x, round(x), abs_tol=1e-12):
+        return num(x, digits=0)
+    return num(x, digits=2)
+
+
 def md_table(rows, columns, max_rows: int = 10) -> str:
     rows = rows[:max_rows]
     if not rows or not columns:
@@ -107,7 +151,8 @@ def md_table(rows, columns, max_rows: int = 10) -> str:
     sep = "| " + " | ".join(["---"] * len(columns)) + " |\n"
     body = ""
     for row in rows:
-        body += "| " + " | ".join(str(row.get(c, "")) for c in columns) + " |\n"
+        formatted = [format_table_value(c, row.get(c, "")) for c in columns]
+        body += "| " + " | ".join(formatted) + " |\n"
     return header + sep + body
 
 
