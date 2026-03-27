@@ -34,10 +34,10 @@ process SUMMARIZE_VCFS {
     VCF="${vcf}"
     PREFIX="${vcf.simpleName}"
 
-    echo "=== SUMMARIZE_VCFS ===" > ${PREFIX}.standardized_summary.txt
-    echo "VCF: ${vcf}" >> ${PREFIX}.standardized_summary.txt
-    echo "Caller: ${caller}" >> ${PREFIX}.standardized_summary.txt
-    echo >> ${PREFIX}.standardized_summary.txt
+    echo "=== SUMMARIZE_VCFS ===" > \${PREFIX}.standardized_summary.txt
+    echo "VCF: ${vcf}" >> \${PREFIX}.standardized_summary.txt
+    echo "Caller: ${caller}" >> \${PREFIX}.standardized_summary.txt
+    echo >> \${PREFIX}.standardized_summary.txt
 
     # ------------------------------------------------------------------
     # 1) Header-aware normalization for summaries
@@ -48,25 +48,25 @@ process SUMMARIZE_VCFS {
     # We therefore create a lightweight summary VCF with standardized tags.
 
     if [ "${caller}" = "angsd" ]; then
-        echo "Preparing ANGSD-aware summary VCF..." | tee -a ${PREFIX}.standardized_summary.txt
+        echo "Preparing ANGSD-aware summary VCF..." | tee -a \${PREFIX}.standardized_summary.txt
 
         bcftools annotate \
             -x INFO/AF,INFO/AC,INFO/AN,INFO/NS,INFO/MAF,INFO/F_MISSING \
-            -Oz -o ${PREFIX}.summary_input.vcf.gz \
+            -Oz -o \${PREFIX}.summary_input.vcf.gz \
             "${vcf}"
-        tabix -p vcf ${PREFIX}.summary_input.vcf.gz
+        tabix -p vcf \${PREFIX}.summary_input.vcf.gz
 
-        bcftools +fill-tags ${PREFIX}.summary_input.vcf.gz \
-            -Oz -o ${PREFIX}.summary_ready.vcf.gz \
+        bcftools +fill-tags \${PREFIX}.summary_input.vcf.gz \
+            -Oz -o \${PREFIX}.summary_ready.vcf.gz \
             -- -t AC,AN,AF,NS,MAF,TYPE,F_MISSING
-        tabix -p vcf ${PREFIX}.summary_ready.vcf.gz
+        tabix -p vcf \${PREFIX}.summary_ready.vcf.gz
 
-        SUMMARY_VCF=${PREFIX}.summary_ready.vcf.gz
+        SUMMARY_VCF=\${PREFIX}.summary_ready.vcf.gz
 
         # Preserve ANGSD site-level INFO fields directly from the raw VCF.
         bcftools query \
             -f '%CHROM\t%POS\t%REF\t%ALT\t%QUAL\t%FILTER\t%INFO/NS\t%INFO/DP\t%INFO/AF\n' \
-            "${vcf}" | bgzip -c > ${PREFIX}.site_qc.tsv.gz
+            "${vcf}" | bgzip -c > \${PREFIX}.site_qc.tsv.gz
 
         # Build sample table from GT/DP missingness in the summary-ready VCF.
         python3 << 'PY'
@@ -133,21 +133,21 @@ with open("${PREFIX}.sample_qc.tsv", 'w') as out:
         mean_dp = st['dp_sum'] / st['dp_n'] if st['dp_n'] else 0
         out.write(f"{s}\t{st['sites_total']}\t{st['sites_called']}\t{st['sites_missing']}\t{f_missing:.6f}\t{mean_dp:.4f}\t{st['het']}\t{st['hom_ref']}\t{st['hom_alt']}\n")
 PY
-        bgzip -f ${PREFIX}.sample_qc.tsv
+        bgzip -f \${PREFIX}.sample_qc.tsv
 
     else
-        echo "Preparing FreeBayes summary VCF..." | tee -a ${PREFIX}.standardized_summary.txt
+        echo "Preparing FreeBayes summary VCF..." | tee -a \${PREFIX}.standardized_summary.txt
 
         bcftools +fill-tags "${vcf}" \
-            -Oz -o ${PREFIX}.summary_ready.vcf.gz \
+            -Oz -o \${PREFIX}.summary_ready.vcf.gz \
             -- -t AC,AN,AF,NS,MAF,TYPE,F_MISSING
-        tabix -p vcf ${PREFIX}.summary_ready.vcf.gz
+        tabix -p vcf \${PREFIX}.summary_ready.vcf.gz
 
-        SUMMARY_VCF=${PREFIX}.summary_ready.vcf.gz
+        SUMMARY_VCF=\${PREFIX}.summary_ready.vcf.gz
 
         bcftools query \
             -f '%CHROM\t%POS\t%REF\t%ALT\t%QUAL\t%FILTER\t%INFO/NS\t%INFO/DP\t%INFO/AF\n' \
-            ${PREFIX}.summary_ready.vcf.gz | bgzip -c > ${PREFIX}.site_qc.tsv.gz
+            \${PREFIX}.summary_ready.vcf.gz | bgzip -c > \${PREFIX}.site_qc.tsv.gz
 
         python3 << 'PY'
 import gzip
@@ -213,81 +213,81 @@ with open("${PREFIX}.sample_qc.tsv", 'w') as out:
         mean_dp = st['dp_sum'] / st['dp_n'] if st['dp_n'] else 0
         out.write(f"{s}\t{st['sites_total']}\t{st['sites_called']}\t{st['sites_missing']}\t{f_missing:.6f}\t{mean_dp:.4f}\t{st['het']}\t{st['hom_ref']}\t{st['hom_alt']}\n")
 PY
-        bgzip -f ${PREFIX}.sample_qc.tsv
+        bgzip -f \${PREFIX}.sample_qc.tsv
     fi
 
     # ------------------------------------------------------------------
     # 2) Standardized summaries shared by both callers
     # ------------------------------------------------------------------
-    bcftools stats ${SUMMARY_VCF} > ${PREFIX}.stats.txt
+    bcftools stats \${SUMMARY_VCF} > \${PREFIX}.stats.txt
 
-    vcftools --gzvcf ${SUMMARY_VCF} --missing-site --out ${PREFIX} >/dev/null 2>&1
-    vcftools --gzvcf ${SUMMARY_VCF} --missing-indv --out ${PREFIX} >/dev/null 2>&1
-    mv ${PREFIX}.lmiss ${PREFIX}.missing_site.tsv
-    mv ${PREFIX}.imiss ${PREFIX}.missing_indv.tsv
+    vcftools --gzvcf \${SUMMARY_VCF} --missing-site --out \${PREFIX} >/dev/null 2>&1
+    vcftools --gzvcf \${SUMMARY_VCF} --missing-indv --out \${PREFIX} >/dev/null 2>&1
+    mv \${PREFIX}.lmiss \${PREFIX}.missing_site.tsv
+    mv \${PREFIX}.imiss \${PREFIX}.missing_indv.tsv
 
-    vcftools --gzvcf ${SUMMARY_VCF} --freq --out ${PREFIX} >/dev/null 2>&1
-    mv ${PREFIX}.frq ${PREFIX}.freq.tsv
+    vcftools --gzvcf \${SUMMARY_VCF} --freq --out \${PREFIX} >/dev/null 2>&1
+    mv \${PREFIX}.frq \${PREFIX}.freq.tsv
 
     {
         echo "=== STANDARDIZED RAW SNP SUMMARY ==="
         echo "Caller: ${caller}"
-        echo "VCF summarized: ${SUMMARY_VCF}"
+        echo "VCF summarized: \${SUMMARY_VCF}"
         echo
         echo "[Variant counts]"
-        grep '^SN' ${PREFIX}.stats.txt || true
+        grep '^SN' \${PREFIX}.stats.txt || true
         echo
         echo "[Ts/Tv]"
-        grep '^TSTV' ${PREFIX}.stats.txt || true
+        grep '^TSTV' \${PREFIX}.stats.txt || true
         echo
         echo "[Top of site QC table]"
-        zcat ${PREFIX}.site_qc.tsv.gz | head -5 || true
+        zcat \${PREFIX}.site_qc.tsv.gz | head -5 || true
         echo
         echo "[Top of sample QC table]"
-        zcat ${PREFIX}.sample_qc.tsv.gz | head -5 || true
+        zcat \${PREFIX}.sample_qc.tsv.gz | head -5 || true
         echo
         echo "[Worst 10 samples by missingness]"
-        tail -n +2 ${PREFIX}.missing_indv.tsv | sort -k5,5gr | head -10 || true
+        tail -n +2 \${PREFIX}.missing_indv.tsv | sort -k5,5gr | head -10 || true
         echo
         echo "[Top of site missingness table]"
-        head -10 ${PREFIX}.missing_site.tsv || true
-    } >> ${PREFIX}.standardized_summary.txt
+        head -10 \${PREFIX}.missing_site.tsv || true
+    } >> \${PREFIX}.standardized_summary.txt
 
     # ------------------------------------------------------------------
     # 3) Plot workflow using standardized companion files
     # ------------------------------------------------------------------
-    VARIANT_COUNT=$(bcftools view -H ${SUMMARY_VCF} | wc -l)
-    echo "Total variants in summary VCF: ${VARIANT_COUNT}" | tee -a ${PREFIX}.standardized_summary.txt
-    echo "Has ploidy map: ${has_ploidy_map}" | tee -a ${PREFIX}.standardized_summary.txt
-    echo "Ploidy argument to R: ${ploidy_arg}" | tee -a ${PREFIX}.standardized_summary.txt
+    VARIANT_COUNT=\$(bcftools view -H \${SUMMARY_VCF} | wc -l)
+    echo "Total variants in summary VCF: \${VARIANT_COUNT}" | tee -a \${PREFIX}.standardized_summary.txt
+    echo "Has ploidy map: ${has_ploidy_map}" | tee -a \${PREFIX}.standardized_summary.txt
+    echo "Ploidy argument to R: ${ploidy_arg}" | tee -a \${PREFIX}.standardized_summary.txt
 
-    if [ ${VARIANT_COUNT} -gt 10 ]; then
-        echo "Running QC plot generation..." | tee -a ${PREFIX}.standardized_summary.txt
-        Rscript ${projectDir}/r_scripts/vcf_qc_plots.R ${SUMMARY_VCF} ${PREFIX} ${ploidy_arg}
+    if [ \${VARIANT_COUNT} -gt 10 ]; then
+        echo "Running QC plot generation..." | tee -a \${PREFIX}.standardized_summary.txt
+        Rscript ${projectDir}/r_scripts/vcf_qc_plots.R \${SUMMARY_VCF} \${PREFIX} ${ploidy_arg}
     else
-        echo "Too few variants (${VARIANT_COUNT}) for meaningful QC plots. Creating placeholder images..." | tee -a ${PREFIX}.standardized_summary.txt
+        echo "Too few variants (\${VARIANT_COUNT}) for meaningful QC plots. Creating placeholder images..." | tee -a \${PREFIX}.standardized_summary.txt
         Rscript -e "
         library(ggplot2)
         placeholder <- ggplot() +
             annotate('text', x = 0.5, y = 0.5,
-                    label = 'Too few variants (n=${VARIANT_COUNT})\\nfor QC analysis',
+                    label = 'Too few variants (n=\${VARIANT_COUNT})\\nfor QC analysis',
                     size = 8) +
             theme_void() +
             theme(panel.border = element_rect(fill=NA))
-        ggsave('${PREFIX}_summary_plots.png', placeholder, width=10, height=10)
-        ggsave('${PREFIX}_summary_plots_extra.png', placeholder, width=10, height=10)
-        ggsave('${PREFIX}_pca.png', placeholder, width=5, height=5)
+        ggsave('\${PREFIX}_summary_plots.png', placeholder, width=10, height=10)
+        ggsave('\${PREFIX}_summary_plots_extra.png', placeholder, width=10, height=10)
+        ggsave('\${PREFIX}_pca.png', placeholder, width=5, height=5)
         write.table(data.frame(message='Too few variants for derived sample QC'),
-                    file='${PREFIX}_sample_qc_derived.tsv', sep='\t', quote=FALSE, row.names=FALSE)
+                    file='\${PREFIX}_sample_qc_derived.tsv', sep='\\t', quote=FALSE, row.names=FALSE)
         write.table(data.frame(message='Too few variants for derived locus QC'),
-                    file='${PREFIX}_locus_qc_derived.tsv', sep='\t', quote=FALSE, row.names=FALSE)
+                    file='\${PREFIX}_locus_qc_derived.tsv', sep='\\t', quote=FALSE, row.names=FALSE)
         write.table(data.frame(message='Too few variants for worst sample ranking'),
-                    file='${PREFIX}_worst_samples.tsv', sep='\t', quote=FALSE, row.names=FALSE)
+                    file='\${PREFIX}_worst_samples.tsv', sep='\\t', quote=FALSE, row.names=FALSE)
         write.table(data.frame(message='Too few variants for worst locus ranking'),
-                    file='${PREFIX}_worst_loci.tsv', sep='\t', quote=FALSE, row.names=FALSE)
+                    file='\${PREFIX}_worst_loci.tsv', sep='\\t', quote=FALSE, row.names=FALSE)
         "
     fi
 
-    echo "Summarization complete for ${vcf}" | tee -a ${PREFIX}.standardized_summary.txt
+    echo "Summarization complete for ${vcf}" | tee -a \${PREFIX}.standardized_summary.txt
     """
 }
