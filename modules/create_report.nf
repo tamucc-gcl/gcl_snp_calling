@@ -5,6 +5,7 @@ process REPORT_SNP_CALLING_SUMMARY {
     input:
     val prefix
     val caller
+    path raw_vcf
     path stats_txt
     path standardized_summary
     path summary_plot
@@ -30,6 +31,7 @@ process REPORT_SNP_CALLING_SUMMARY {
     python3 - \
         "${prefix}" \
         "${caller}" \
+        "${raw_vcf}" \
         "${stats_txt}" \
         "${standardized_summary}" \
         "${summary_plot}" \
@@ -53,6 +55,7 @@ from pathlib import Path
 (
     prefix,
     caller,
+    raw_vcf,
     stats_txt,
     standardized_summary,
     summary_plot,
@@ -67,8 +70,9 @@ from pathlib import Path
     freq_tsv,
     site_qc_tsv,
     sample_qc_tsv,
-) = sys.argv[1:17]
+) = sys.argv[1:18]
 
+raw_vcf = Path(raw_vcf)
 stats_txt = Path(stats_txt)
 standardized_summary = Path(standardized_summary)
 summary_plot = Path(summary_plot)
@@ -86,8 +90,15 @@ sample_qc_tsv = Path(sample_qc_tsv)
 
 out_md = Path(f"{prefix}_snp_calling_report.md")
 
+# summarize_vcfs outputs are now published under params.output_dir/snp_qc
+QC_REL_DIR = Path("snp_qc")
 
-def rel_link(path: Path) -> str:
+
+def rel_link_qc(path: Path) -> str:
+    return str(QC_REL_DIR / path.name)
+
+
+def rel_link_root(path: Path) -> str:
     return path.name
 
 
@@ -95,7 +106,7 @@ def pct(x, digits=1):
     if x is None:
         return "NA"
     try:
-        return f"{100 * float(x):.{digits}f}%"
+        return f"{100 * float(x):,.{digits}f}%"
     except Exception:
         return "NA"
 
@@ -109,8 +120,6 @@ def num(x, digits=2):
             return "NA"
         if digits == 0:
             return f"{int(round(xf)):,}"
-        if abs(xf) >= 1000 and xf.is_integer():
-            return f"{int(xf):,}"
         return f"{xf:,.{digits}f}"
     except Exception:
         return str(x)
@@ -124,7 +133,7 @@ def open_text_auto(path: Path):
 
 def read_tsv(path: Path):
     with open_text_auto(path) as fh:
-        reader = csv.DictReader(fh, delimiter="\\t")
+        reader = csv.DictReader(fh, delimiter="\t")
         return list(reader)
 
 
@@ -138,12 +147,12 @@ def safe_read_tsv(path: Path):
 def md_table(rows, columns, max_rows=10):
     rows = rows[:max_rows]
     if not rows or not columns:
-        return "_No rows available._\\n"
-    header = "| " + " | ".join(columns) + " |\\n"
-    sep = "| " + " | ".join(["---"] * len(columns)) + " |\\n"
+        return "_No rows available._\n"
+    header = "| " + " | ".join(columns) + " |\n"
+    sep = "| " + " | ".join(["---"] * len(columns)) + " |\n"
     body = ""
     for r in rows:
-        body += "| " + " | ".join(str(r.get(c, "")) for c in columns) + " |\\n"
+        body += "| " + " | ".join(str(r.get(c, "")) for c in columns) + " |\n"
     return header + sep + body
 
 
@@ -155,12 +164,12 @@ ts_tv = None
 
 with open(stats_txt, "r") as fh:
     for line in fh:
-        if line.startswith("SN\\t"):
-            parts = line.rstrip().split("\\t")
+        if line.startswith("SN\t"):
+            parts = line.rstrip().split("\t")
             if len(parts) >= 4:
-                summary_numbers[parts[2].rstrip(":")] = parts[3]
-        elif line.startswith("TSTV\\t"):
-            parts = line.rstrip().split("\\t")
+                summary_numbers[parts[2].rstrip(":" )] = parts[3]
+        elif line.startswith("TSTV\t"):
+            parts = line.rstrip().split("\t")
             if len(parts) >= 5:
                 ts_tv = {
                     "ts": parts[2],
@@ -220,22 +229,22 @@ interpretation = []
 n_records = summary_numbers.get("number of records")
 if n_records is not None:
     interpretation.append(
-        f"The raw callset contains **{n_records} variant records** across **{summary_numbers.get('number of samples', metrics.get('samples_total', 'NA'))} samples**."
+        f"The raw callset contains **{num(n_records, 0)} variant records** across **{num(summary_numbers.get('number of samples', metrics.get('samples_total', 'NA')), 0)} samples**."
     )
 
 if ts_tv and ts_tv.get("ratio") not in (None, "", "NA"):
     interpretation.append(
-        f"The **transition/transversion ratio is {ts_tv['ratio']}**, which is a useful high-level check on callset plausibility."
+        f"The **transition/transversion ratio is {num(ts_tv['ratio'], 2)}**, which is a useful high-level check on callset plausibility."
     )
 
 if metrics.get("sample_missing_gt30") is not None:
     interpretation.append(
-        f"At the sample level, **{metrics['sample_missing_gt30']} samples exceed 30% missing data**, with median sample missingness of **{pct(metrics.get('sample_missing_median'))}**."
+        f"At the sample level, **{num(metrics['sample_missing_gt30'], 0)} samples exceed 30% missing data**, with median sample missingness of **{pct(metrics.get('sample_missing_median'))}**."
     )
 
 if metrics.get("locus_missing_gt30") is not None:
     interpretation.append(
-        f"At the locus level, **{metrics['locus_missing_gt30']} loci exceed 30% missing data**, with median locus missingness of **{pct(metrics.get('locus_missing_median'))}**."
+        f"At the locus level, **{num(metrics['locus_missing_gt30'], 0)} loci exceed 30% missing data**, with median locus missingness of **{pct(metrics.get('locus_missing_median'))}**."
     )
 
 if metrics.get("samples_per_locus_median") is not None:
@@ -262,79 +271,81 @@ else:
 # Build markdown
 # ------------------------------------------------------------
 with open(out_md, "w") as out:
-    out.write(f"# SNP calling summary report: `{prefix}`\\n\\n")
-    out.write(f"**Caller:** `{caller}`  \\n")
-    out.write(f"**Primary VCF summary file:** [`{stats_txt.name}`]({rel_link(stats_txt)})  \\n")
-    out.write(f"**Standardized summary text:** [`{standardized_summary.name}`]({rel_link(standardized_summary)})\\n\\n")
+    out.write(f"# SNP calling summary report: `{prefix}`\n\n")
+    out.write(f"**Caller:** `{caller}`  \n")
+    out.write(f"**Raw VCF:** [`{raw_vcf.name}`]({rel_link_root(raw_vcf)})  \n")
+    out.write(f"**Primary VCF summary file:** [`{stats_txt.name}`]({rel_link_qc(stats_txt)})  \n")
+    out.write(f"**Standardized summary text:** [`{standardized_summary.name}`]({rel_link_qc(standardized_summary)})\n\n")
 
-    out.write("## Main takeaways\\n\\n")
+    out.write("## Main takeaways\n\n")
     for line in interpretation + caller_specific:
-        out.write(f"- {line}\\n")
-    out.write("\\n")
+        out.write(f"- {line}\n")
+    out.write("\n")
 
-    out.write("## Core summary metrics\\n\\n")
-    out.write("| Metric | Value |\\n")
-    out.write("| --- | --- |\\n")
-    out.write(f"| Samples | {summary_numbers.get('number of samples', metrics.get('samples_total', 'NA'))} |\\n")
-    out.write(f"| Variant records | {summary_numbers.get('number of records', metrics.get('loci_total', 'NA'))} |\\n")
-    out.write(f"| SNPs | {summary_numbers.get('number of SNPs', 'NA')} |\\n")
-    out.write(f"| Multiallelic sites | {summary_numbers.get('number of multiallelic sites', 'NA')} |\\n")
-    out.write(f"| Ts/Tv | {ts_tv['ratio'] if ts_tv else 'NA'} |\\n")
-    out.write(f"| Median sample missingness | {pct(metrics.get('sample_missing_median'))} |\\n")
-    out.write(f"| Samples >30% missing | {metrics.get('sample_missing_gt30', 'NA')} |\\n")
-    out.write(f"| Median locus missingness | {pct(metrics.get('locus_missing_median'))} |\\n")
-    out.write(f"| Loci >30% missing | {metrics.get('locus_missing_gt30', 'NA')} |\\n")
-    out.write(f"| Median samples per locus | {num(metrics.get('samples_per_locus_median'), 0)} |\\n")
-    out.write(f"| Median sample mean depth | {num(metrics.get('sample_mean_dp_median'), 2)} |\\n")
-    out.write(f"| Median locus mean depth | {num(metrics.get('locus_depth_median'), 2)} |\\n")
-    out.write(f"| Median MAF | {num(metrics.get('maf_median'), 3)} |\\n")
-    out.write(f"| Loci with MAF <0.05 | {metrics.get('maf_lt05', 'NA')} |\\n")
-    out.write(f"| Loci with MAF <0.10 | {metrics.get('maf_lt10', 'NA')} |\\n\\n")
+    out.write("## Core summary metrics\n\n")
+    out.write("| Metric | Value |\n")
+    out.write("| --- | --- |\n")
+    out.write(f"| Samples | {num(summary_numbers.get('number of samples', metrics.get('samples_total', 'NA')), 0)} |\n")
+    out.write(f"| Variant records | {num(summary_numbers.get('number of records', metrics.get('loci_total', 'NA')), 0)} |\n")
+    out.write(f"| SNPs | {num(summary_numbers.get('number of SNPs', 'NA'), 0)} |\n")
+    out.write(f"| Multiallelic sites | {num(summary_numbers.get('number of multiallelic sites', 'NA'), 0)} |\n")
+    out.write(f"| Ts/Tv | {num(ts_tv['ratio'], 2) if ts_tv else 'NA'} |\n")
+    out.write(f"| Median sample missingness | {pct(metrics.get('sample_missing_median'))} |\n")
+    out.write(f"| Samples >30% missing | {num(metrics.get('sample_missing_gt30'), 0)} |\n")
+    out.write(f"| Median locus missingness | {pct(metrics.get('locus_missing_median'))} |\n")
+    out.write(f"| Loci >30% missing | {num(metrics.get('locus_missing_gt30'), 0)} |\n")
+    out.write(f"| Median samples per locus | {num(metrics.get('samples_per_locus_median'), 0)} |\n")
+    out.write(f"| Median sample mean depth | {num(metrics.get('sample_mean_dp_median'), 2)} |\n")
+    out.write(f"| Median locus mean depth | {num(metrics.get('locus_depth_median'), 2)} |\n")
+    out.write(f"| Median MAF | {num(metrics.get('maf_median'), 3)} |\n")
+    out.write(f"| Loci with MAF <0.05 | {num(metrics.get('maf_lt05'), 0)} |\n")
+    out.write(f"| Loci with MAF <0.10 | {num(metrics.get('maf_lt10'), 0)} |\n\n")
 
-    out.write("## QC plots\\n\\n")
-    out.write("### Summary panel\\n\\n")
-    out.write(f"![Summary plots]({rel_link(summary_plot)})\\n\\n")
-    out.write("### Additional diagnostics\\n\\n")
-    out.write(f"![Additional summary plots]({rel_link(extra_plot)})\\n\\n")
-    out.write("### PCA\\n\\n")
-    out.write(f"![PCA plot]({rel_link(pca_plot)})\\n\\n")
+    out.write("## QC plots\n\n")
+    out.write("### Summary panel\n\n")
+    out.write(f"![Summary plots]({rel_link_qc(summary_plot)})\n\n")
+    out.write("### Additional diagnostics\n\n")
+    out.write(f"![Additional summary plots]({rel_link_qc(extra_plot)})\n\n")
+    out.write("### PCA\n\n")
+    out.write(f"![PCA plot]({rel_link_qc(pca_plot)})\n\n")
 
-    out.write("## Candidate samples for review or removal\\n\\n")
-    out.write("These are the worst samples by derived sample QC, intended to guide inspection of missingness and depth before downstream filtering.\\n\\n")
+    out.write("## Candidate samples for review or removal\n\n")
+    out.write("These are the worst samples by derived sample QC, intended to guide inspection of missingness and depth before downstream filtering.\n\n")
     sample_cols = [c for c in ["sample", "pct_loci_missing", "number_loci", "mean_depth_called", "flag_high_missing", "flag_low_depth"] if worst_sample_rows and c in worst_sample_rows[0]]
     out.write(md_table(worst_sample_rows, sample_cols, max_rows=15))
-    out.write("\\n")
+    out.write("\n")
 
-    out.write("## Candidate loci / locus classes for review\\n\\n")
-    out.write("These are the worst loci by derived locus QC, useful for understanding whether raw calls are failing because of sparse representation, unusual depth, or both.\\n\\n")
+    out.write("## Candidate loci / locus classes for review\n\n")
+    out.write("These are the worst loci by derived locus QC, useful for understanding whether raw calls are failing because of sparse representation, unusual depth, or both.\n\n")
     locus_cols = [c for c in ["locus", "pct_samples_missing", "number_samples_with_locus", "mean_depth", "maf"] if worst_locus_rows and c in worst_locus_rows[0]]
     out.write(md_table(worst_locus_rows, locus_cols, max_rows=15))
-    out.write("\\n")
+    out.write("\n")
 
-    out.write("## Files to inspect next\\n\\n")
-    out.write("| File | Why it matters |\\n")
-    out.write("| --- | --- |\\n")
-    out.write(f"| [`{sample_qc_derived.name}`]({rel_link(sample_qc_derived)}) | Derived per-sample QC summary used for ranking poor samples. |\\n")
-    out.write(f"| [`{locus_qc_derived.name}`]({rel_link(locus_qc_derived)}) | Derived per-locus QC summary used for missingness/depth/MAF interpretation. |\\n")
-    out.write(f"| [`{missing_indv.name}`]({rel_link(missing_indv)}) | Raw per-sample missingness from vcftools. |\\n")
-    out.write(f"| [`{missing_site.name}`]({rel_link(missing_site)}) | Raw per-site missingness from vcftools. |\\n")
-    out.write(f"| [`{freq_tsv.name}`]({rel_link(freq_tsv)}) | Frequency table for checking the MAF distribution of raw SNP calls. |\\n")
-    out.write(f"| [`{site_qc_tsv.name}`]({rel_link(site_qc_tsv)}) | Standardized site-level QC table; especially important for ANGSD outputs. |\\n")
-    out.write(f"| [`{sample_qc_tsv.name}`]({rel_link(sample_qc_tsv)}) | Standardized sample-level QC table. |\\n")
-    out.write(f"| [`{worst_samples.name}`]({rel_link(worst_samples)}) | Quick list of the worst samples to investigate first. |\\n")
-    out.write(f"| [`{worst_loci.name}`]({rel_link(worst_loci)}) | Quick list of the worst loci to investigate first. |\\n\\n")
+    out.write("## Files to inspect next\n\n")
+    out.write("| File | Why it matters |\n")
+    out.write("| --- | --- |\n")
+    out.write(f"| [`{sample_qc_derived.name}`]({rel_link_qc(sample_qc_derived)}) | Derived per-sample QC summary used for ranking poor samples. |\n")
+    out.write(f"| [`{locus_qc_derived.name}`]({rel_link_qc(locus_qc_derived)}) | Derived per-locus QC summary used for missingness/depth/MAF interpretation. |\n")
+    out.write(f"| [`{missing_indv.name}`]({rel_link_qc(missing_indv)}) | Raw per-sample missingness from vcftools. |\n")
+    out.write(f"| [`{missing_site.name}`]({rel_link_qc(missing_site)}) | Raw per-site missingness from vcftools. |\n")
+    out.write(f"| [`{freq_tsv.name}`]({rel_link_qc(freq_tsv)}) | Frequency table for checking the MAF distribution of raw SNP calls. |\n")
+    out.write(f"| [`{site_qc_tsv.name}`]({rel_link_qc(site_qc_tsv)}) | Standardized site-level QC table; especially important for ANGSD outputs. |\n")
+    out.write(f"| [`{sample_qc_tsv.name}`]({rel_link_qc(sample_qc_tsv)}) | Standardized sample-level QC table. |\n")
+    out.write(f"| [`{worst_samples.name}`]({rel_link_qc(worst_samples)}) | Quick list of the worst samples to investigate first. |\n")
+    out.write(f"| [`{worst_loci.name}`]({rel_link_qc(worst_loci)}) | Quick list of the worst loci to investigate first. |\n\n")
 
-    out.write("## How to use this report for SNP-calling decisions\\n\\n")
-    out.write("1. Check whether the **sample missingness tail** is driven by a few poor samples or is broadly spread across the dataset.  \\n")
-    out.write("2. Check whether **locus missingness** is acceptable for the intended downstream analysis.  \\n")
-    out.write("3. Compare **mean depth distributions** to spot low-depth noise or high-depth repeat-like loci.  \\n")
-    out.write("4. Review the **MAF distribution** to decide whether raw settings are retaining too many marginal alleles.  \\n")
-    out.write("5. Use the **PCA** to see whether raw SNP structure is plausible or dominated by poor-quality samples.\\n\\n")
+    out.write("## How to use this report for SNP-calling decisions\n\n")
+    out.write("1. Check whether the **sample missingness tail** is driven by a few poor samples or is broadly spread across the dataset.  \n")
+    out.write("2. Check whether **locus missingness** is acceptable for the intended downstream analysis.  \n")
+    out.write("3. Compare **mean depth distributions** to spot low-depth noise or high-depth repeat-like loci.  \n")
+    out.write("4. Review the **MAF distribution** to decide whether raw settings are retaining too many marginal alleles.  \n")
+    out.write("5. Use the **PCA** to see whether raw SNP structure is plausible or dominated by poor-quality samples.\n\n")
 
-    out.write("## Reproducibility notes\\n\\n")
-    out.write(f"- Caller: `{caller}`\\n")
-    out.write(f"- Input stats summary: `{stats_txt.name}`\\n")
-    out.write(f"- Generated report: `{out_md.name}`\\n")
+    out.write("## Reproducibility notes\n\n")
+    out.write(f"- Caller: `{caller}`\n")
+    out.write(f"- Raw VCF: `{raw_vcf.name}`\n")
+    out.write(f"- Input stats summary: `{stats_txt.name}`\n")
+    out.write(f"- Generated report: `{out_md.name}`\n")
 PY
     """
 }
