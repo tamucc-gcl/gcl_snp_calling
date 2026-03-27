@@ -22,7 +22,6 @@ process SUMMARIZE_VCFS {
     path("${vcf.simpleName}_locus_qc_derived.tsv")
     path("${vcf.simpleName}_worst_samples.tsv")
     path("${vcf.simpleName}_worst_loci.tsv")
-    optional true
 
     script:
     def has_ploidy_map = ploidy_map.name != 'NO_FILE'
