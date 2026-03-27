@@ -160,12 +160,9 @@ genind2genlight <- function(gi) {
 }
 
 extract_first_af <- function(x) {
-  if (is.na(x) || x == ".") {
-    return(NA_real_)
-  }
-  
-  x <- str_split(as.character(x), ",", simplify = TRUE)[1]
-  
+  x <- as.character(x)
+  x[is.na(x) | x == "."] <- NA_character_
+  x <- stringr::str_split_fixed(x, ",", 2)[, 1]
   suppressWarnings(as.numeric(x))
 }
 
