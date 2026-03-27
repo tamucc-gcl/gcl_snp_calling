@@ -156,6 +156,19 @@ def md_table(rows, columns, max_rows: int = 10) -> str:
     return header + sep + body
 
 
+
+
+def derive_angsd_companion_paths(raw_vcf_link: Path) -> tuple[Path, Path]:
+    path_str = str(raw_vcf_link)
+    if path_str.endswith('.vcf.gz'):
+        base = path_str[:-7]
+    elif path_str.endswith('.vcf'):
+        base = path_str[:-4]
+    else:
+        base = str(raw_vcf_link.with_suffix(''))
+    return Path(f"{base}.beagle.gz"), Path(f"{base}.mafs.gz")
+
+
 def parse_bcftools_stats(stats_txt: Path):
     summary_numbers = {}
     ts_tv = None
@@ -300,10 +313,31 @@ def build_report(
         if worst_locus_rows and c in worst_locus_rows[0]
     ]
 
+    beagle_path = None
+    mafs_path = None
+    raw_call_links = [f"[`{raw_vcf_link.name}`]({rel_link_root(raw_vcf_link)})"]
+    if caller.lower() == "angsd":
+        beagle_path, mafs_path = derive_angsd_companion_paths(raw_vcf_link)
+        raw_call_links.append(f"[`{beagle_path.name}`]({rel_link_root(beagle_path)})")
+        raw_call_links.append(f"[`{mafs_path.name}`]({rel_link_root(mafs_path)})")
+    raw_call_files_line = " | ".join(raw_call_links)
+
+    reproducibility_notes = [
+        f"- Caller: `{caller}`",
+        f"- Raw VCF: `{raw_vcf_link.name}`",
+    ]
+    if beagle_path is not None and mafs_path is not None:
+        reproducibility_notes.append(f"- Beagle file: `{beagle_path.name}`")
+        reproducibility_notes.append(f"- MAF file: `{mafs_path.name}`")
+    reproducibility_notes.append(f"- Input stats summary: `{stats_txt.name}`")
+    reproducibility_notes.append(f"- Generated report: `{out_md.name}`")
+    reproducibility_notes_text = "
+".join(reproducibility_notes)
+
     report = f"""# SNP calling summary report: `{prefix}`
 
 **Caller:** `{caller}`  
-**Raw VCF:** [`{raw_vcf_link.name}`]({rel_link_root(raw_vcf_link)})  
+**Raw call files:** {raw_call_files_line}  
 **Primary VCF summary file:** [`{stats_txt.name}`]({rel_link_qc(stats_txt)})  
 **Standardized summary text:** [`{standardized_summary.name}`]({rel_link_qc(standardized_summary)})
 
@@ -384,10 +418,7 @@ These are the worst loci by derived locus QC, useful for understanding whether r
 
 ## Reproducibility notes
 
-- Caller: `{caller}`
-- Raw VCF: `{raw_vcf_link.name}`
-- Input stats summary: `{stats_txt.name}`
-- Generated report: `{out_md.name}`
+{reproducibility_notes_text}
 """
 
     with open(out_md, "w", encoding="utf-8") as out:
