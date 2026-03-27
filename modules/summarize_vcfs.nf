@@ -1,6 +1,6 @@
 process SUMMARIZE_VCFS {
     tag "${vcf.baseName}"
-    publishDir params.output_dir, mode: 'copy'
+    publishDir "${params.output_dir}/snp_qc", mode: 'copy'
 
     input:
     path vcf
