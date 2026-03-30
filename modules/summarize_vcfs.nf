@@ -62,6 +62,7 @@ process SUMMARIZE_VCFS {
 
         python3 <<PY
 import gzip
+import re
 
 vcf = "${vcf.simpleName}.summary_ready.vcf.gz"
 samples = []
@@ -109,7 +110,7 @@ with gzip.open(vcf, "rt") as fh:
             gt = parts[gt_i] if gt_i is not None and gt_i < len(parts) else "./."
             dp = parts[dp_i] if dp_i is not None and dp_i < len(parts) else "."
 
-            if gt in ("./.", ".|."):
+            if all(a == '.' for a in re.split(r'[/|]', gt)):
                 stats[s]["sites_missing"] += 1
             else:
                 stats[s]["sites_called"] += 1
@@ -206,7 +207,7 @@ with gzip.open(vcf, "rt") as fh:
             gt = parts[gt_i] if gt_i is not None and gt_i < len(parts) else "./."
             dp = parts[dp_i] if dp_i is not None and dp_i < len(parts) else "."
 
-            if gt in ("./.", ".|."):
+            if all(a == '.' for a in re.split(r'[/|]', gt)):
                 stats[s]["sites_missing"] += 1
             else:
                 stats[s]["sites_called"] += 1
