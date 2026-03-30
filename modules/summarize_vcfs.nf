@@ -160,6 +160,7 @@ PY
 
         python3 <<PY
 import gzip
+import re
 
 vcf = "${vcf.simpleName}.summary_ready.vcf.gz"
 samples = []
