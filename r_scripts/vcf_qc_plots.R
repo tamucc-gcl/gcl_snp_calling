@@ -315,21 +315,25 @@ if (!is.null(sample_qc_tbl)) {
   sample_qc <- fallback_sample_qc
 }
 
-if (!is.null(missing_indv_tbl)) {
-  sample_qc <- sample_qc %>%
-    left_join(
-      missing_indv_tbl %>%
-        rename(sample = INDV, f_missing_vcftools = F_MISS),
-      by = "sample"
-    ) %>%
-    mutate(
-      pct_loci_missing = if_else(
-        !is.na(f_missing_vcftools),
-        f_missing_vcftools,
-        pct_loci_missing
-      )
-    ) %>%
-    select(-f_missing_vcftools)
+if (!is.null(missing_indv_tbl) && all(c("INDV", "F_MISS") %in% names(missing_indv_tbl))) {
+  f_miss_vals <- suppressWarnings(as.numeric(missing_indv_tbl$F_MISS))
+  if (any(!is.na(f_miss_vals))) {
+    sample_qc <- sample_qc %>%
+      left_join(
+        missing_indv_tbl %>%
+          rename(sample = INDV, f_missing_vcftools = F_MISS) %>%
+          mutate(f_missing_vcftools = suppressWarnings(as.numeric(f_missing_vcftools))),
+        by = "sample"
+      ) %>%
+      mutate(
+        pct_loci_missing = if_else(
+          !is.na(f_missing_vcftools),
+          f_missing_vcftools,
+          pct_loci_missing
+        )
+      ) %>%
+      select(-f_missing_vcftools)
+  }
 }
 
 sample_qc <- sample_qc %>%
