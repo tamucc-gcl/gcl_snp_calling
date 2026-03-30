@@ -240,12 +240,15 @@ PY
 
     bcftools stats \${SUMMARY_VCF} > ${vcf.simpleName}.stats.txt
 
-    vcftools --gzvcf \${SUMMARY_VCF} --missing-site --out ${vcf.simpleName} >/dev/null 2>&1
-    vcftools --gzvcf \${SUMMARY_VCF} --missing-indv --out ${vcf.simpleName} >/dev/null 2>&1
+    vcftools --gzvcf \${SUMMARY_VCF} --missing-site --out ${vcf.simpleName} >/dev/null 2>&1 || \
+        echo -e "CHR\tPOS\tN_DATA\tN_GENOTYPE_FILTERED\tN_MISS\tF_MISS" > ${vcf.simpleName}.lmiss
+    vcftools --gzvcf \${SUMMARY_VCF} --missing-indv --out ${vcf.simpleName} >/dev/null 2>&1 || \
+        echo -e "INDV\tN_DATA\tN_GENOTYPES_FILTERED\tN_MISS\tF_MISS" > ${vcf.simpleName}.imiss
     mv ${vcf.simpleName}.lmiss ${vcf.simpleName}.missing_site.tsv
     mv ${vcf.simpleName}.imiss ${vcf.simpleName}.missing_indv.tsv
 
-    vcftools --gzvcf \${SUMMARY_VCF} --freq --out ${vcf.simpleName} >/dev/null 2>&1
+    vcftools --gzvcf \${SUMMARY_VCF} --freq --out ${vcf.simpleName} >/dev/null 2>&1 || \
+        echo -e "CHROM\tPOS\tN_ALLELES\tN_CHR\t{ALLELE:FREQ}" > ${vcf.simpleName}.frq
     mv ${vcf.simpleName}.frq ${vcf.simpleName}.freq.tsv
 
     {
