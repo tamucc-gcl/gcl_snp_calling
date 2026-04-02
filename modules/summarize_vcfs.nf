@@ -124,7 +124,7 @@ with gzip.open(vcf, "rt") as fh:
 with open("${vcf.simpleName}.sample_qc.tsv", "w") as out:
     cols = ["sample", "sites_total", "sites_called", "sites_missing",
             "f_missing", "mean_dp_called", "het", "hom_ref", "hom_alt"]
-    out.write("\t".join(cols) + "\n")
+    print("\t".join(cols), file=out)
     for s in samples:
         st      = stats[s]
         f_miss  = st["sites_missing"] / st["sites_total"] if st["sites_total"] else 0
@@ -140,7 +140,7 @@ with open("${vcf.simpleName}.sample_qc.tsv", "w") as out:
             str(st["hom_ref"]),
             str(st["hom_alt"]),
         ]
-        out.write("\t".join(row) + "\n")
+        print("\t".join(row), file=out)
 PY
     bgzip -f ${vcf.simpleName}.sample_qc.tsv
 
@@ -149,22 +149,23 @@ PY
     # -----------------------------------------------------------------------
     bcftools stats \${SUMMARY_VCF} > ${vcf.simpleName}.stats.txt
 
-    vcftools --gzvcf \${SUMMARY_VCF} --missing-site --out ${vcf.simpleName} \
-        >/dev/null 2>&1 || echo -e "CHR\tPOS\tN_DATA\tN_GENOTYPE_FILTERED\tN_MISS\tF_MISS" \
-        > ${vcf.simpleName}.lmiss
-    vcftools --gzvcf \${SUMMARY_VCF} --missing-indv --out ${vcf.simpleName} \
-        >/dev/null 2>&1 || echo -e "INDV\tN_DATA\tN_GENOTYPES_FILTERED\tN_MISS\tF_MISS" \
-        > ${vcf.simpleName}.imiss
+    if ! vcftools --gzvcf \${SUMMARY_VCF} --missing-site --out ${vcf.simpleName} >/dev/null 2>&1; then
+        printf "CHR\tPOS\tN_DATA\tN_GENOTYPE_FILTERED\tN_MISS\tF_MISS\n" > ${vcf.simpleName}.lmiss
+    fi
     mv ${vcf.simpleName}.lmiss ${vcf.simpleName}.missing_site.tsv
+
+    if ! vcftools --gzvcf \${SUMMARY_VCF} --missing-indv --out ${vcf.simpleName} >/dev/null 2>&1; then
+        printf "INDV\tN_DATA\tN_GENOTYPES_FILTERED\tN_MISS\tF_MISS\n" > ${vcf.simpleName}.imiss
+    fi
     mv ${vcf.simpleName}.imiss ${vcf.simpleName}.missing_indv.tsv
 
-    vcftools --gzvcf \${SUMMARY_VCF} --freq --out ${vcf.simpleName} \
-        >/dev/null 2>&1 || echo -e "CHROM\tPOS\tN_ALLELES\tN_CHR\t{ALLELE:FREQ}" \
-        > ${vcf.simpleName}.frq
+    if ! vcftools --gzvcf \${SUMMARY_VCF} --freq --out ${vcf.simpleName} >/dev/null 2>&1; then
+        printf "CHROM\tPOS\tN_ALLELES\tN_CHR\t{ALLELE:FREQ}\n" > ${vcf.simpleName}.frq
+    fi
     mv ${vcf.simpleName}.frq ${vcf.simpleName}.freq.tsv
 
     # -----------------------------------------------------------------------
-    # 5. Pre-extract DP and GT matrices for R plot script
+    # 5. Pre-extract DP matrix for R plot script
     # -----------------------------------------------------------------------
     SAMPLES=\$(bcftools query -l \${SUMMARY_VCF} | tr '\n' '\t' | sed 's/\t\$//')
 
@@ -174,21 +175,19 @@ PY
     bgzip -f ${vcf.simpleName}.dp_matrix.tsv
 
     # -----------------------------------------------------------------------
-    # 6. Pre-select PCA sites in the shell — sample up to 10k sites with
-    #    MAF > 0.05 from the site_qc table, then extract a tiny VCF for R.
-    #    R never touches the full VCF.
+    # 6. Pre-select PCA sites — sample up to 10k sites with MAF > 0.05
     # -----------------------------------------------------------------------
     python3 <<'PY'
 import gzip, random, sys
 
-site_qc = "${vcf.simpleName}.site_qc.tsv.gz"
+site_qc   = "${vcf.simpleName}.site_qc.tsv.gz"
 max_sites = 10000
 maf_min   = 0.05
 random.seed(42)
 
 candidates = []
 with gzip.open(site_qc, "rt") as fh:
-    header = fh.readline()   # skip header
+    fh.readline()   # skip header
     for line in fh:
         parts = line.rstrip().split("\t")
         if len(parts) < 9:
@@ -205,15 +204,15 @@ with gzip.open(site_qc, "rt") as fh:
 if len(candidates) > max_sites:
     candidates = random.sample(candidates, max_sites)
 
-candidates.sort()   # sort for bcftools regions (required)
+candidates.sort()
 with open("pca_regions.txt", "w") as out:
     for chrom, pos in candidates:
-        out.write(f"{chrom}\t{pos}\n")
+        out.write(chrom + "\t" + pos + "\n")
 
-print(f"Selected {len(candidates)} sites for PCA subset", file=sys.stderr)
+print("Selected " + str(len(candidates)) + " sites for PCA subset", file=sys.stderr)
 PY
 
-    # Extract the small PCA VCF — only GT field needed, drop INFO to shrink size
+    # Extract the small PCA VCF
     if [ -s pca_regions.txt ]; then
         bcftools view \${SUMMARY_VCF} \
             -R pca_regions.txt \
@@ -221,7 +220,6 @@ PY
         bcftools index ${vcf.simpleName}.pca_subset.vcf.gz
         PCA_VCF=${vcf.simpleName}.pca_subset.vcf.gz
     else
-        # Fallback: no sites passed MAF filter — pass empty sentinel
         PCA_VCF="NO_PCA_VCF"
     fi
 
@@ -256,7 +254,7 @@ PY
     echo "Total variants: \${VARIANT_COUNT}" | tee -a ${vcf.simpleName}.standardized_summary.txt
 
     # -----------------------------------------------------------------------
-    # 8. R QC plots — receives only pre-extracted flat files + small PCA VCF
+    # 8. R QC plots
     # -----------------------------------------------------------------------
     if [ \${VARIANT_COUNT} -gt 10 ]; then
         echo "Running QC plot generation..." | tee -a ${vcf.simpleName}.standardized_summary.txt
@@ -287,7 +285,7 @@ PY
         "
     fi
 
-    # Clean up intermediates not in publishDir outputs
+    # Clean up intermediates
     rm -f ${vcf.simpleName}.summary_ready.vcf.gz \
           ${vcf.simpleName}.summary_ready.vcf.gz.csi \
           ${vcf.simpleName}.dp_matrix.tsv.gz \
