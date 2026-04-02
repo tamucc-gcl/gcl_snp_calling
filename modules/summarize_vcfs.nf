@@ -122,15 +122,25 @@ with gzip.open(vcf, "rt") as fh:
                     pass
 
 with open("${vcf.simpleName}.sample_qc.tsv", "w") as out:
-    out.write("sample\tsites_total\tsites_called\tsites_missing\t"
-              "f_missing\tmean_dp_called\thet\thom_ref\thom_alt\n")
+    cols = ["sample", "sites_total", "sites_called", "sites_missing",
+            "f_missing", "mean_dp_called", "het", "hom_ref", "hom_alt"]
+    out.write("\t".join(cols) + "\n")
     for s in samples:
         st      = stats[s]
         f_miss  = st["sites_missing"] / st["sites_total"] if st["sites_total"] else 0
         mean_dp = st["dp_sum"]        / st["dp_n"]        if st["dp_n"]        else 0
-        out.write(f"{s}\t{st['sites_total']}\t{st['sites_called']}\t"
-                  f"{st['sites_missing']}\t{f_miss:.6f}\t{mean_dp:.4f}\t"
-                  f"{st['het']}\t{st['hom_ref']}\t{st['hom_alt']}\n")
+        row = [
+            s,
+            str(st["sites_total"]),
+            str(st["sites_called"]),
+            str(st["sites_missing"]),
+            f"{f_miss:.6f}",
+            f"{mean_dp:.4f}",
+            str(st["het"]),
+            str(st["hom_ref"]),
+            str(st["hom_alt"]),
+        ]
+        out.write("\t".join(row) + "\n")
 PY
     bgzip -f ${vcf.simpleName}.sample_qc.tsv
 
