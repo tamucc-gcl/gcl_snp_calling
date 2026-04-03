@@ -207,7 +207,7 @@ if len(candidates) > max_sites:
 candidates.sort()
 with open("pca_regions.txt", "w") as out:
     for chrom, pos in candidates:
-        out.write(chrom + "\t" + pos + "\n")
+        print(chrom, pos, sep="\t", file=out)
 
 print("Selected " + str(len(candidates)) + " sites for PCA subset", file=sys.stderr)
 PY
