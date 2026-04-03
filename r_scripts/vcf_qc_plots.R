@@ -21,6 +21,8 @@ dp_matrix_file <- if (length(args) >= 4 && file.exists(args[4])) args[4] else NU
 
 have_pca_vcf <- pca_vcf_file != "NO_PCA_VCF" && file.exists(pca_vcf_file)
 
+`%||%` <- function(a, b) if (!is.null(a)) a else b
+
 cat("Output prefix:", output_prefix, "\n")
 cat("PCA VCF (small subset):", if (have_pca_vcf) pca_vcf_file else "not available", "\n")
 cat("DP matrix:", dp_matrix_file %||% "not provided", "\n")
@@ -42,7 +44,7 @@ library(purrr)
 library(MASS)
 select <- dplyr::select
 
-`%||%` <- function(a, b) if (!is.null(a)) a else b
+
 
 #### Helper functions ####
 
