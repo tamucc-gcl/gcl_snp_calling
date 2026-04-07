@@ -73,13 +73,13 @@ pca_data <- tibble(sample_id = sample_ids,
        PC1 = eigen_result$vectors[, 1],
        PC2 = eigen_result$vectors[, 2],
        PC3 = eigen_result$vectors[, 3],
-       PC4 = eigen_result$vectors[, 4]) %>%
-  flag_outliers()
-
+       PC4 = eigen_result$vectors[, 4])
+write_csv(pca_data, paste0(output_prefix, "_pcangsd_pca_data.csv"))
 
 
 # PCA Plot: PC1 vs PC2
 p1 <- pca_data %>%
+  flag_outliers() %>%
   ggplot(aes(x = PC1, y = PC2)) +
   geom_hline(yintercept = 0, linetype = 'dashed') +
   geom_vline(xintercept = 0, linetype = 'dashed') +
@@ -95,6 +95,7 @@ p1 <- pca_data %>%
 
 # PCA Plot: PC3 vs PC4
 p2 <- pca_data %>%
+  flag_outliers() %>%
   ggplot(aes(x = PC3, y = PC4)) +
   geom_hline(yintercept = 0, linetype = 'dashed') +
   geom_vline(xintercept = 0, linetype = 'dashed') +

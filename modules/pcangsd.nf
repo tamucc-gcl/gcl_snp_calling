@@ -29,6 +29,7 @@ process PCANGSD {
     path "${output_prefix}_pcangsd_admixture.png", emit: admix_plot, optional: true
     path "${output_prefix}_pcangsd_tree.png", emit: tree_plot, optional: true
     path "sample_names.txt", emit: sample_names, optional: true
+    path "${output_prefix}_pcangsd_pca_data.csv", emit: pca_data, optional: true
     
     script:
     """
