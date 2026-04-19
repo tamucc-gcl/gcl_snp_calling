@@ -21,7 +21,7 @@ process COMBINE_VCFS {
     for vcf in ${vcf_files.join(' ')}; do
         # Get the chunk number from filename (format: chunk_N.vcf.gz)
         base=\$(basename \$vcf .vcf.gz)
-        chunk_num=\$(echo \$base | sed 's/chunk_//')
+        chunk_num=\$(echo \$base | sed 's/chunk_//g')
         
         # Pad with zeros for proper sorting
         printf "%05d\\t%s\\n" "\$chunk_num" "\$vcf"
