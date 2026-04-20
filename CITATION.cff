@@ -1,0 +1,12 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "gcl_snp_calling"
+type: "software"
+version: "0.1.0"
+date-released: "2026-04-20"
+authors:
+  - family-names: "Selwyn"
+    given-names: "Jason"
+    orcid: "https://orcid.org/0000-0002-9100-217X"
+repository-code: "https://github.com/tamucc-gcl/gcl_snp_calling"
+license: "MIT"
