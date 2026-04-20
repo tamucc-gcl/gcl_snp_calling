@@ -1,4 +1,4 @@
-# gcl_snp_calling
+# gcl_snp_calling [![DOI](https://zenodo.org/badge/1025039445.svg)](https://doi.org/10.5281/zenodo.19666917)
 ![](pipeline_dag.png)
 
 This pipeline takes a directory of mapped and indexed BAM files, filters them, and performs SNP calling using [FreeBayes](https://github.com/freebayes/freebayes). It is written in [Nextflow](https://www.nextflow.io/) DSL2 and is designed to be run either directly or via SLURM using the provided sbatch script. The pipeline supports both individual samples and pooled sequencing with different numbers of individuals per pool.
