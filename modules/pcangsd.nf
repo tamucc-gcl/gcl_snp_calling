@@ -32,8 +32,8 @@ process PCANGSD {
     path "${output_prefix}_pcangsd_pca_data.csv", emit: pca_data, optional: true
     
     script:
-    def min_maf_arg = params.pcangsd_minMaf != null ? "-minMaf ${params.pcangsd_minMaf}" : ""
-    def eigen_arg   = params.pcangsd_eigenvalues != null ? "-e ${params.pcangsd_eigenvalues}" : ""
+    def pcangsd_maf_arg = params.pcangsd_minMaf != null ? "--maf ${params.pcangsd_minMaf}" : ""
+    def pcangsd_eig_arg = params.pcangsd_eigenvalues != null ? "--eig ${params.pcangsd_eigenvalues}" : ""
             
     """
     echo "Running PCAngsd on: ${beagle_file}"
@@ -69,8 +69,8 @@ process PCANGSD {
         -o ${output_prefix}.pcangsd \
         --maf-iter ${params.pcangsd_maf_iter} \
         --iter ${params.pcangsd_iter} \
-        ${min_maf_arg} \
-        ${eigen_arg} \
+        ${pcangsd_maf_arg} \
+        ${pcangsd_eig_arg} \
         --tree \
         --maf-save \
         --pi-save \
