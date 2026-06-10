@@ -2,21 +2,6 @@
 
 nextflow.enable.dsl = 2
 
-// Import modules
-include { CREATE_CHUNKS } from './modules/create_chunks'
-include { FILTER_BAMS } from './modules/filter_bams'
-include { FREEBAYES_CHUNK } from './modules/freebayes_chunk'
-include { ANGSD_CHUNK } from './modules/angsd_chunk'
-include { COMBINE_VCFS } from './modules/combine_vcfs'
-include { COMBINE_ANGSD } from './modules/combine_angsd'
-include { PCANGSD } from './modules/pcangsd'
-include { SUMMARIZE_VCFS } from './modules/summarize_vcfs'
-include { samtools_stats as SAMTOOLS_STATS_RAW } from './modules/samtools_stats'
-include { samtools_stats as SAMTOOLS_STATS_FILTERED } from './modules/samtools_stats'
-include { multiqc as MULTIQC_RAW_BAMS } from './modules/multiqc'
-include { multiqc as MULTIQC_FILTERED_BAMS } from './modules/multiqc'
-include { REPORT_SNP_CALLING_SUMMARY } from './modules/create_report.nf'
-
 // Parameters
 params.bams = "*.bam"
 params.reference = "reference.fasta"
@@ -37,6 +22,21 @@ params.pcangsd_maf_iter = 1000
 params.pcangsd_iter = 1000
 params.pcangsd_eigenvalues = 6 //null for automatic selection with MAP values
         
+// Import modules
+include { CREATE_CHUNKS } from './modules/create_chunks'
+include { FILTER_BAMS } from './modules/filter_bams'
+include { FREEBAYES_CHUNK } from './modules/freebayes_chunk'
+include { ANGSD_CHUNK } from './modules/angsd_chunk'
+include { COMBINE_VCFS } from './modules/combine_vcfs'
+include { COMBINE_ANGSD } from './modules/combine_angsd'
+include { PCANGSD } from './modules/pcangsd'
+include { SUMMARIZE_VCFS } from './modules/summarize_vcfs'
+include { samtools_stats as SAMTOOLS_STATS_RAW } from './modules/samtools_stats'
+include { samtools_stats as SAMTOOLS_STATS_FILTERED } from './modules/samtools_stats'
+include { multiqc as MULTIQC_RAW_BAMS } from './modules/multiqc'
+include { multiqc as MULTIQC_FILTERED_BAMS } from './modules/multiqc'
+include { REPORT_SNP_CALLING_SUMMARY } from './modules/create_report.nf'
+
 
 def helpMessage() {
     log.info"""
