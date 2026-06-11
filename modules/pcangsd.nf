@@ -46,63 +46,54 @@ process PCANGSD {
             
     """
     set -euo pipefail
-
     echo "Running PCAngsd on: ${beagle_file}"
     echo "Output prefix: ${output_prefix}"
     echo "Available threads: ${task.cpus}"
-
+    
     # Verify beagle file exists and has data
     if [ ! -f "${beagle_file}" ]; then
         echo "ERROR: Beagle file not found!"
         exit 1
     fi
-
+    
     SITES=\$(zcat ${beagle_file} | tail -n +2 | wc -l)
     echo "Sites in Beagle file: \$SITES"
-
+    
     if [ \$SITES -eq 0 ]; then
         echo "ERROR: Beagle file is empty!"
         exit 1
     fi
 
-    # Extract sample names from Beagle header
-    python - <<PY
-    import gzip
-
-    beagle_file = "${beagle_file}"
-
-    with gzip.open(beagle_file, "rt") as f:
-        header = f.readline().strip().split()
-
-    with open("sample_names.txt", "w") as out:
-        for i in range(3, len(header), 3):
-            out.write(header[i] + "\\n")
-    PY
-
+    # Extracts every other sample name (since diploid samples appear three times)
+    zcat ${beagle_file} | head -n1 | awk '{
+        for(i=4; i<=NF; i+=3) {
+            print \$i
+        }
+    }' > sample_names.txt
+    
     # Run PCAngsd with all requested analyses
     echo "Starting PCAngsd analysis..."
-
-    set +e
-    pcangsd \\
-        -b ${beagle_file} \\
-        -t ${task.cpus} \\
-        -o ${output_prefix}.pcangsd \\
-        --maf-iter ${params.pcangsd_maf_iter} \\
-        --iter ${params.pcangsd_iter} \\
-        ${pcangsd_maf_arg} \\
-        ${pcangsd_eig_arg} \\
-        --tree \\
-        --maf-save \\
-        --pi-save \\
-        --admix \\
-        --admix-alpha 0.1 \\
+    pcangsd \
+        -b ${beagle_file} \
+        -t ${task.cpus} \
+        -o ${output_prefix}.pcangsd \
+        --maf-iter ${params.pcangsd_maf_iter} \
+        --iter ${params.pcangsd_iter} \
+        ${pcangsd_maf_arg} \
+        ${pcangsd_eig_arg} \
+        --tree \
+        --maf-save \
+        --pi-save \
+        --admix \
+        --admix-alpha 0.1 \
         2>&1 | tee ${output_prefix}.pcangsd.log
+    
+        #--admix-auto 10 \\
 
-    PCANGSD_EXIT=\${PIPESTATUS[0]}
-    set -e
-
+    PCANGSD_EXIT=\$?
+    
     echo "PCAngsd exit status: \$PCANGSD_EXIT"
-
+    
     if [ \$PCANGSD_EXIT -ne 0 ]; then
         echo "ERROR: PCAngsd failed!"
         exit 1
