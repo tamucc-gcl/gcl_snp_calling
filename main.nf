@@ -18,8 +18,8 @@ params.genotyper = "freebayes"  // "freebayes" or "angsd"
 
 // PCAngsd parameters
 params.pcangsd_minMaf = null //null to skip and default to all loci which pass ANGSD SNP calling filters, or set to a value (e.g., 0.05) to filter by MAF
-params.pcangsd_maf_iter = 1000
-params.pcangsd_iter = 1000
+params.pcangsd_maf_iter = 10000
+params.pcangsd_iter = 10000
 params.pcangsd_eigenvalues = 6 //null for automatic selection with MAP values
         
 // Import modules
