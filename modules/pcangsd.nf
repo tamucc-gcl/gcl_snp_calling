@@ -32,10 +32,20 @@ process PCANGSD {
     path "${output_prefix}_pcangsd_pca_data.csv", emit: pca_data, optional: true
     
     script:
-    def pcangsd_maf_arg = params.pcangsd_minMaf != null ? "--maf ${params.pcangsd_minMaf}" : ""
-    def pcangsd_eig_arg = params.pcangsd_eigenvalues != null ? "--eig ${params.pcangsd_eigenvalues}" : ""
+    def pcangsd_eig_arg = (
+            params.pcangsd_eigenvalues != null &&
+            params.pcangsd_eigenvalues.toString().toLowerCase() != "null" &&
+            params.pcangsd_eigenvalues.toString().trim() != ""
+        ) ? "--eig ${params.pcangsd_eigenvalues}" : ""
+
+    def pcangsd_maf_arg = (
+            params.pcangsd_minMaf != null &&
+            params.pcangsd_minMaf.toString().toLowerCase() != "null" &&
+            params.pcangsd_minMaf.toString().trim() != ""
+        ) ? "--maf ${params.pcangsd_minMaf}" : ""
             
     """
+    set -euo pipefail
     echo "Running PCAngsd on: ${beagle_file}"
     echo "Output prefix: ${output_prefix}"
     echo "Available threads: ${task.cpus}"
