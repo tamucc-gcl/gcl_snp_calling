@@ -19,6 +19,7 @@ dependencies:
   - r-tidyr
   - r-patchwork
   - r-ggrepel
+  - r-readr
   - bioconductor-ggtree
   - bioconductor-treeio
   - r-tidytree
