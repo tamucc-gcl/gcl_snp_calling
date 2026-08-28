@@ -23,7 +23,9 @@ process ANGSD_CHUNK {
     echo "Processing chunk ${chunk_id} with ANGSD"
     # echo "Regions: ${regions_string}"
     echo "Reference: ${reference}"
-    touch ${reference}.fai
+    ln -sf "\$(readlink -f ${reference})" angsd_ref.fa
+    cp -L "${reference}.fai" angsd_ref.fa.fai
+    touch angsd_ref.fa.fai
 
     # --- Basic BAM checks ----------------------------------------------------
     BAM_COUNT=\$(ls -1 *.bam 2>/dev/null | wc -l)
@@ -64,7 +66,7 @@ process ANGSD_CHUNK {
 
     # --- Build base ANGSD command -------------------------------------------
     ANGSD_CMD="angsd -bam bam.list"
-    ANGSD_CMD="\$ANGSD_CMD -ref ${reference}"
+    ANGSD_CMD="\$ANGSD_CMD -ref angsd_ref.fa"
     ANGSD_CMD="\$ANGSD_CMD -rf angsd_regions.txt"
     ANGSD_CMD="\$ANGSD_CMD -out ${chunk_id}_raw"
     ANGSD_CMD="\$ANGSD_CMD -nThreads ${task.cpus}"
@@ -244,22 +246,45 @@ try:
     # ignore-RG recommended by ANGSD for BCF output
     params.append("--ignore-RG 0")
 
+    # --- reject unrecognised keys --------------------------------------------
+    known = {
+        "basic_options": {"remove_bads","unique_only","only_proper_pairs","trim","C","baq",
+                          "checkBamHeaders","doCounts"},
+        "filters": {"minQ","minMapQ","minInd","setMinDepth","setMaxDepth",
+                    "setMinDepthInd","setMaxDepthInd"},
+        "genotype_likelihoods": {"GL","doGlf","doGeno","doPost","geno_minDepth",
+                                 "geno_maxDepth","geno_minMM","geno_postCutoff"},
+        "snp_calling": {"doMajorMinor","doMaf","SNP_pval","rmTriallelic",
+                        "skipTriallelic","minMaf","minLRT"},
+        "pooled_sequencing": {"doSaf","fold","anc","is_pooled","n_individuals_per_pool"},
+        "output_options": {"dumpCounts","doDepth","maxDepth","doQsDist","dosnpstat","doHWE"},
+    }
+    unknown = [f"{s}.{k}" for s, ok in known.items()
+               for k in (config.get(s) or {})
+               if not k.startswith("comment") and k not in ok]
+    if unknown:
+        raise ValueError("unrecognised config keys: " + ", ".join(sorted(unknown)))
+
     # Emit shell code to set ANGSD_PARAMS and some logging
     joined = " ".join(params)
     print(f"ANGSD_PARAMS='{joined}'")
     print(f"echo 'Loaded {len(params)} parameters from config (including minimal Beagle/BCF defaults as needed)'")
 
 except Exception as e:
-    # On any error, fall back to minimal defaults that guarantee Beagle & BCF
-    sys.stderr.write(f"# Error parsing config: {e}\\n")
-    print("echo 'WARNING: Failed to parse config file, using minimal defaults for Beagle/BCF'")
-    print("ANGSD_PARAMS='-GL 1 -doGlf 2 -doMajorMinor 1 -doMaf 1 -doCounts 1 -doGeno 1 -doPost 1 -dobcf 1 --ignore-RG 0'")
+    # Do NOT substitute defaults: a typo would silently change the analysis.
+    sys.stderr.write(f"FATAL: could not parse ANGSD config '{config_path}': {e}\\n")
+    print("ANGSD_CONFIG_ERROR=1")
 PYTHON_CONFIG
 
         # Bring ANGSD_PARAMS into this shell
         source angsd_params.sh
 
-        if [ -n "\$ANGSD_PARAMS" ]; then
+        if [ "\${ANGSD_CONFIG_ERROR:-0}" != "0" ]; then
+            echo "ERROR: ANGSD config ${config} could not be parsed - see stderr above." >&2
+            exit 78
+        fi
+
+        if [ -n "\${ANGSD_PARAMS:-}" ]; then
             ANGSD_CMD="\$ANGSD_CMD \$ANGSD_PARAMS"
         fi
     else
@@ -278,6 +303,13 @@ PYTHON_CONFIG
     echo "----------------------------------------"
     echo "ANGSD exit status: \$ANGSD_EXIT"
 
+    if [ \$ANGSD_EXIT -ne 0 ]; then
+        echo "ERROR: ANGSD failed for chunk ${chunk_id} (exit \$ANGSD_EXIT)" >&2
+        echo "Refusing to post-process partial outputs." >&2
+        ls -l ${chunk_id}_raw.* 2>/dev/null || true
+        exit \$ANGSD_EXIT
+    fi
+
     # Quick summary of outputs
     if [ -f "${chunk_id}_raw.beagle.gz" ]; then
         SITES=\$(zcat ${chunk_id}_raw.beagle.gz 2>/dev/null | tail -n +2 | wc -l)
@@ -291,6 +323,19 @@ PYTHON_CONFIG
         echo "Variants in BCF: \$VARIANTS"
     else
         echo "No BCF file generated"
+    fi
+
+    # The reheaders below name columns from bam.list, but --ignore-RG 0 makes
+    # ANGSD define individuals from @RG/SM. If those counts ever disagree,
+    # every column would be silently mislabelled.
+    if [ -f "${chunk_id}_raw.beagle.gz" ]; then
+        N_IND=\$(zcat ${chunk_id}_raw.beagle.gz | head -n1 | awk '{print (NF-3)/3}')
+        if [ "\$N_IND" != "\$BAM_COUNT" ]; then
+            echo "ERROR: ANGSD produced \$N_IND individuals but bam.list has \$BAM_COUNT." >&2
+            echo "Check for duplicate or multiple SM tags in the BAM headers." >&2
+            exit 79
+        fi
+        echo "Sample count check OK: \$N_IND individuals == \$BAM_COUNT BAMs"
     fi
 
     # Reheader Beagle sample names using bam.list
@@ -405,11 +450,6 @@ PYTHON_CONFIG
             echo "Note: \$src not found, skipping"
         fi
     done
-
-    if [ \$ANGSD_EXIT -ne 0 ]; then
-        echo "ERROR: ANGSD failed for chunk ${chunk_id}"
-        exit 1
-    fi
 
     echo "Chunk ${chunk_id} processing complete"
     """
