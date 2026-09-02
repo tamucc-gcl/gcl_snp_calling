@@ -5,6 +5,10 @@ process REPORT_SNP_CALLING_SUMMARY {
     input:
     val caller
     val raw_vcf_link
+    val decomposed_vcf_link
+    path raw_stats
+    path tstv_sweep
+    path decompose_summary
     tuple val(prefix),
           path(stats_txt),
           path(site_qc_tsv),
@@ -19,7 +23,8 @@ process REPORT_SNP_CALLING_SUMMARY {
           path(sample_qc_derived),
           path(locus_qc_derived),
           path(worst_samples),
-          path(worst_loci)
+          path(worst_loci),
+          path(pca_site_selection)
 
     output:
     path("${prefix}_snp_calling_report.md")
@@ -32,6 +37,10 @@ process REPORT_SNP_CALLING_SUMMARY {
         "${prefix}" \
         "${caller}" \
         "${raw_vcf_link}" \
+        "${decomposed_vcf_link}" \
+        "${raw_stats}" \
+        "${tstv_sweep}" \
+        "${decompose_summary}" \
         "${stats_txt}" \
         "${standardized_summary}" \
         "${summary_plot}" \

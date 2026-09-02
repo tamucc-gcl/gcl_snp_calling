@@ -11,6 +11,7 @@ process COMBINE_VCFS {
     output:
     path output_name, emit: vcf
     path "${output_name}.tbi", emit: index
+    path "raw_callset_stats.txt", emit: raw_stats 
     
     script:
     """
@@ -83,5 +84,16 @@ VCF_HEADER
     # Print first few variants for verification
     echo "=== FIRST FEW VARIANTS ==="
     zcat ${output_name} | grep -v '^#' | head -3
+
+    # -----------------------------------------------------------------------
+    # Raw-callset stats for the report.
+    #
+    # This is the FreeBayes-native callset, before multiallelic splitting and
+    # atomization. Its multiallelic / MNP / complex counts are the collapsed-
+    # paralog signal that the decomposed VCF no longer carries per-site.
+    # -----------------------------------------------------------------------
+    echo "Generating raw-callset stats..."
+    bcftools stats ${output_name} > raw_callset_stats.txt
+    grep '^SN' raw_callset_stats.txt || true
     """
 }

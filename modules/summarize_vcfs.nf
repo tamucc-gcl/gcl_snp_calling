@@ -23,11 +23,16 @@ process SUMMARIZE_VCFS {
           path("${vcf.simpleName}_locus_qc_derived.tsv"),
           path("${vcf.simpleName}_worst_samples.tsv"),
           path("${vcf.simpleName}_worst_loci.tsv"),
+          path("${vcf.simpleName}_pca_site_selection.txt"),
           emit: report_inputs
 
     script:
     def has_ploidy_map = ploidy_map.name != 'NO_FILE'
     def ploidy_arg     = has_ploidy_map ? "${ploidy_map}" : "NO_PLOIDY_MAP"
+    def pca_min_spacing = params.pca_min_spacing != null ? params.pca_min_spacing :
+                        (params.data_type == 'wgs' ? 5000 : 500)
+    def pca_ns_frac     = params.pca_ns_frac     != null ? params.pca_ns_frac     : 0.50
+
     """
     set -euo pipefail
 
@@ -167,6 +172,7 @@ PY
     # -----------------------------------------------------------------------
     # 5. Pre-extract DP matrix for R plot script
     # -----------------------------------------------------------------------
+    bcftools query -l \${SUMMARY_VCF} > vcf_samples.txt
     SAMPLES=\$(bcftools query -l \${SUMMARY_VCF} | tr '\n' '\t' | sed 's/\t\$//')
 
     echo -e "CHROM\tPOS\t\${SAMPLES}" > ${vcf.simpleName}.dp_matrix.tsv
@@ -175,42 +181,156 @@ PY
     bgzip -f ${vcf.simpleName}.dp_matrix.tsv
 
     # -----------------------------------------------------------------------
-    # 6. Pre-select PCA sites — sample up to 10k sites with MAF > 0.05
+    # 6. Pre-select PCA sites
+    #
+    # Requires BOTH a call-rate floor (INFO/NS) and a MAF floor. MAF alone is
+    # not a meaningful threshold because AN depends on how many samples were
+    # called at the site.
     # -----------------------------------------------------------------------
     python3 <<'PY'
-import gzip, random, sys
+import gzip, sys
 
-site_qc   = "${vcf.simpleName}.site_qc.tsv.gz"
-max_sites = 10000
-maf_min   = 0.05
-random.seed(42)
+site_qc     = "${vcf.simpleName}.site_qc.tsv.gz"
+max_sites   = 10000
+maf_min     = 0.05
+min_spacing = ${pca_min_spacing}
+ns_frac     = ${pca_ns_frac}
 
-candidates = []
+# Relax the call-rate floor rather than emit a PCA built on nothing.
+ns_frac_ladder = [f for f in (ns_frac, 0.25, 0.10, 0.0) if f <= ns_frac] or [0.0]
+min_sites_ok   = 1000
+
+# site_qc.tsv.gz columns:
+#   0 chromo  1 position  2 REF  3 ALT  4 QUAL  5 FILTER  6 NS  7 DP  8 AF
+COL_CHROM, COL_POS, COL_NS, COL_AF = 0, 1, 6, 8
+
+with open("vcf_samples.txt") as fh:
+    n_samples = sum(1 for line in fh if line.strip())
+
+if n_samples == 0:
+    sys.exit("PCA site selection: no samples found in vcf_samples.txt")
+
+log = []
+log.append(f"Samples in callset: {n_samples}")
+log.append(f"MAF floor: {maf_min}")
+log.append(f"Minimum site spacing: {min_spacing} bp")
+
+
+def parse(parts):
+    """Return (chrom, pos, ns, maf) or None if the row is unusable."""
+    if len(parts) <= COL_AF:
+        return None
+    try:
+        ns = int(float(parts[COL_NS]))
+    except (ValueError, IndexError):
+        return None
+    try:
+        af = float(parts[COL_AF].split(",")[0])
+    except (ValueError, IndexError):
+        return None
+    return parts[COL_CHROM], parts[COL_POS], ns, min(af, 1.0 - af)
+
+
+# --- pass 1: how many sites survive at each rung of the ladder? ------------
+counts = {f: 0 for f in ns_frac_ladder}
+n_rows = 0
+n_maf_pass = 0
+
 with gzip.open(site_qc, "rt") as fh:
-    fh.readline()   # skip header
+    fh.readline()
     for line in fh:
-        parts = line.rstrip().split("\t")
-        if len(parts) < 9:
+        n_rows += 1
+        rec = parse(line.rstrip("\n").split("\t"))
+        if rec is None:
             continue
-        chrom, pos, af_str = parts[0], parts[1], parts[8]
-        try:
-            af  = float(af_str.split(",")[0])
-            maf = min(af, 1.0 - af)
-        except (ValueError, IndexError):
+        _, _, ns, maf = rec
+        if maf < maf_min:
             continue
-        if maf >= maf_min:
-            candidates.append((chrom, pos))
+        n_maf_pass += 1
+        for f in ns_frac_ladder:
+            if ns >= f * n_samples:
+                counts[f] += 1
 
+log.append(f"Sites read: {n_rows}")
+log.append(f"Sites passing MAF alone: {n_maf_pass}")
+for f in ns_frac_ladder:
+    log.append(f"  + NS >= {f:.2f} x {n_samples} = {int(f * n_samples)}: {counts[f]}")
+
+chosen = next((f for f in ns_frac_ladder if counts[f] >= min_sites_ok),
+              ns_frac_ladder[-1])
+ns_min = int(chosen * n_samples)
+
+if chosen != ns_frac_ladder[0]:
+    log.append(f"WARNING: call-rate floor relaxed from {ns_frac_ladder[0]:.2f} "
+               f"to {chosen:.2f} to reach {min_sites_ok} sites. "
+               f"Interpret the PCA with care.")
+if counts[chosen] < min_sites_ok:
+    log.append(f"WARNING: only {counts[chosen]} sites available even with no "
+               f"call-rate floor. The PCA is unlikely to be informative.")
+
+log.append(f"Selected NS floor: {ns_min} ({chosen:.2f} of {n_samples})")
+
+
+# --- pass 2: collect, enforcing spacing on the fly ------------------------
+# site_qc.tsv.gz is written in VCF order, so it is already coordinate-sorted
+# and a single greedy sweep is sufficient.
+candidates = []
+last_chrom = None
+last_pos = None
+n_dropped_spacing = 0
+
+with gzip.open(site_qc, "rt") as fh:
+    fh.readline()
+    for line in fh:
+        rec = parse(line.rstrip("\n").split("\t"))
+        if rec is None:
+            continue
+        chrom, pos, ns, maf = rec
+        if maf < maf_min or ns < ns_min:
+            continue
+
+        if min_spacing > 0:
+            try:
+                ipos = int(pos)
+            except ValueError:
+                continue
+            if chrom == last_chrom and last_pos is not None \
+                    and (ipos - last_pos) < min_spacing:
+                n_dropped_spacing += 1
+                continue
+            last_chrom, last_pos = chrom, ipos
+
+        candidates.append((chrom, pos))
+
+log.append(f"Sites dropped by spacing: {n_dropped_spacing}")
+log.append(f"Sites after spacing: {len(candidates)}")
+
+
+# --- thin to max_sites, preserving even spread across the genome ----------
+# Systematic every-nth thinning rather than random sampling, so the subset
+# stays spread across contigs instead of clumping by chance.
 if len(candidates) > max_sites:
-    candidates = random.sample(candidates, max_sites)
+    step = len(candidates) / float(max_sites)
+    candidates = [candidates[int(i * step)] for i in range(max_sites)]
+    log.append(f"Thinned to {len(candidates)} sites (every ~{step:.1f}th)")
 
-candidates.sort()
 with open("pca_regions.txt", "w") as out:
     for chrom, pos in candidates:
         print(chrom, pos, sep="\t", file=out)
 
-print("Selected " + str(len(candidates)) + " sites for PCA subset", file=sys.stderr)
+with open("pca_site_selection.txt", "w") as out:
+    print("=== PCA SITE SELECTION ===", file=out)
+    for line in log:
+        print(line, file=out)
+
+for line in log:
+    print(line, file=sys.stderr)
+print(f"Selected {len(candidates)} sites for PCA subset", file=sys.stderr)
 PY
+
+    cat pca_site_selection.txt >> ${vcf.simpleName}.standardized_summary.txt
+    echo >> ${vcf.simpleName}.standardized_summary.txt
+
 
     # Extract the small PCA VCF
     if [ -s pca_regions.txt ]; then
@@ -290,9 +410,9 @@ PY
           ${vcf.simpleName}.summary_ready.vcf.gz.csi \
           ${vcf.simpleName}.dp_matrix.tsv.gz \
           ${vcf.simpleName}.pca_subset.vcf.gz \
-          ${vcf.simpleName}.pca_subset.vcf.gz.csi \
-          pca_regions.txt
+          ${vcf.simpleName}.pca_subset.vcf.gz.csi
 
+    mv pca_site_selection.txt ${vcf.simpleName}_pca_site_selection.txt
     echo "Summarization complete for ${vcf}" | tee -a ${vcf.simpleName}.standardized_summary.txt
     """
 }

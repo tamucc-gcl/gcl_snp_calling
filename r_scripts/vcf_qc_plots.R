@@ -22,6 +22,7 @@ dp_matrix_file <- if (length(args) >= 4 && file.exists(args[4])) args[4] else NU
 have_pca_vcf <- pca_vcf_file != "NO_PCA_VCF" && file.exists(pca_vcf_file)
 
 `%||%` <- function(a, b) if (!is.null(a)) a else b
+max_pca_labels <- 25
 
 cat("Output prefix:", output_prefix, "\n")
 cat("PCA VCF (small subset):", if (have_pca_vcf) pca_vcf_file else "not available", "\n")
@@ -160,6 +161,46 @@ if (have_pca_vcf) {
   pca_vcf <- NULL
   cat("No PCA VCF available — PCA will be skipped\n")
 }
+
+# Per-sample missingness and depth restricted to the PCA site subset. These
+# are the quantities that govern the mean-imputation artifact in glPca.
+pca_subset_qc <- NULL
+
+if (!is.null(pca_vcf)) {
+  gt_sub <- tryCatch(
+    vcfR::extract.gt(pca_vcf, element = "GT"),
+    error = function(e) { cat("Could not extract subset GT:", e$message, "\n"); NULL }
+  )
+
+  if (!is.null(gt_sub) && ncol(gt_sub) > 0) {
+    dp_sub <- tryCatch(
+      vcfR::extract.gt(pca_vcf, element = "DP", as.numeric = TRUE),
+      error = function(e) NULL
+    )
+
+    subset_mean_dp <- if (!is.null(dp_sub)) {
+      dp_sub[dp_sub == 0] <- NA
+      colMeans(dp_sub, na.rm = TRUE)
+    } else {
+      rep(NA_real_, ncol(gt_sub))
+    }
+
+    pca_subset_qc <- tibble(
+      sample                = colnames(gt_sub),
+      pct_subset_missing    = colMeans(is.na(gt_sub)),
+      subset_mean_depth     = as.numeric(subset_mean_dp),
+      n_subset_sites_called = colSums(!is.na(gt_sub))
+    )
+
+    cat("PCA subset sites:", nrow(gt_sub), "\n")
+    cat("PCA subset missingness: median",
+        round(median(pca_subset_qc$pct_subset_missing), 4),
+        "| max", round(max(pca_subset_qc$pct_subset_missing), 4), "\n")
+
+    rm(gt_sub, dp_sub); gc()
+  }
+}
+
 
 #### Optional companion files ####
 site_qc_file     <- find_companion_file(output_prefix, c(".site_qc.tsv.gz", ".site_qc.tsv"))
@@ -457,51 +498,108 @@ if (!is.null(pca_vcf)) {
       flag_outliers(pca_out) %>%
       left_join(sample_qc, by = "sample")
 
+    # Attach subset-level QC. Fall back to full-callset values if the subset
+    # extraction failed, so the plot still renders with a clear axis label.
+    if (!is.null(pca_subset_qc)) {
+      raw_pca_scores <- raw_pca_scores %>%
+        left_join(pca_subset_qc, by = "sample")
+      colour_var    <- "pct_subset_missing"
+      size_var      <- "subset_mean_depth"
+      colour_label  <- "% missing\n(PCA sites)"
+      size_label    <- "Mean depth\n(PCA sites)"
+      scope_note    <- "PCA-subset sites"
+    } else {
+      raw_pca_scores <- raw_pca_scores %>%
+        mutate(pct_subset_missing = pct_loci_missing,
+               subset_mean_depth  = mean_depth_called)
+      colour_var    <- "pct_subset_missing"
+      size_var      <- "subset_mean_depth"
+      colour_label  <- "% missing\n(full callset)"
+      size_label    <- "Mean depth\n(full callset)"
+      scope_note    <- "full callset (subset QC unavailable)"
+    }
+
     readr::write_tsv(raw_pca_scores, paste0(output_prefix, "_pca_scores.tsv"))
 
     use_text_labels <- !is.null(ploidy_map) && is.data.frame(ploidy_map) &&
                        nrow(ploidy_map) > 0 && nrow(ploidy_map) < 10
 
+    # --- label selection ---------------------------------------------------
+    # Labels come from PCA outlier status only. flag_high_missing and
+    # flag_low_depth are full-callset QC flags and can be TRUE for every
+    # sample, which is what previously produced an unreadable plot.
+    label_candidates <- raw_pca_scores %>%
+      filter(outlier | robust_outlier) %>%
+      mutate(label_score = pmax(coalesce(robust_outlier_score, -Inf),
+                                coalesce(outlier_score,        -Inf))) %>%
+      arrange(desc(label_score))
+
+    n_flagged <- nrow(label_candidates)
+    label_data <- head(label_candidates, max_pca_labels)
+    n_labelled <- nrow(label_data)
+
+    label_note <- if (n_flagged == 0) {
+      "no PCA outliers flagged"
+    } else if (n_flagged > n_labelled) {
+      paste0(comma(n_flagged), " outliers flagged; ",
+             n_labelled, " highest-scoring labelled")
+    } else {
+      paste0(n_labelled, " outlier", if (n_labelled == 1) "" else "s", " labelled")
+    }
+
+    cat("PCA outliers flagged:", n_flagged, "| labelled:", n_labelled, "\n")
+
     raw_snp_pca <- raw_pca_scores %>%
-      ggplot(aes(x = PC1, y = PC2, color = pct_loci_missing, size = mean_depth_called)) +
+      ggplot(aes(x = PC1, y = PC2,
+                 color = .data[[colour_var]],
+                 size  = .data[[size_var]])) +
       geom_hline(yintercept = 0, linetype = "dashed") +
       geom_vline(xintercept = 0, linetype = "dashed")
 
     if (use_text_labels) {
       raw_snp_pca <- raw_snp_pca + geom_text(aes(label = sample))
     } else {
-      raw_snp_pca <- raw_snp_pca + geom_point(alpha = 0.85)
-      label_data  <- raw_pca_scores %>%
-        filter(outlier | robust_outlier | flag_high_missing | flag_low_depth)
-      if (nrow(label_data) > 0)
+      raw_snp_pca <- raw_snp_pca +
+        geom_point(alpha = if (nrow(raw_pca_scores) > 300) 0.7 else 0.85)
+      if (nrow(label_data) > 0) {
         raw_snp_pca <- raw_snp_pca +
           geom_text_repel(data = label_data, aes(label = sample),
-                          hjust = "inward", vjust = "inward", max.overlaps = 50)
+                          size = 3, show.legend = FALSE,
+                          min.segment.length = 0,
+                          box.padding = 0.4,
+                          hjust = "inward", vjust = "inward",
+                          max.overlaps = Inf)
+      }
     }
 
     raw_snp_pca <- raw_snp_pca +
-      scale_color_viridis_c(labels = scales::percent_format(), option = "D", na.value = "grey50") +
-      scale_size_continuous(range = c(1.5, 5)) +
-      labs(x = str_c("PC1 (", pct_var[1], ")"), y = str_c("PC2 (", pct_var[2], ")"),
-           color = "% missing", size = "Mean\ncalled depth", title = "Raw SNP PCA",
-           subtitle = "Colored by sample missingness; labels flag outliers / poor-QC samples") +
+      scale_color_viridis_c(labels = scales::percent_format(accuracy = 0.1),
+                            option = "D", na.value = "grey50") +
+      scale_size_continuous(range = c(1.5, 5), labels = scales::comma_format()) +
+      labs(x = str_c("PC1 (", pct_var[1], ")"),
+           y = str_c("PC2 (", pct_var[2], ")"),
+           color = colour_label, size = size_label,
+           title = "Raw SNP PCA",
+           subtitle = paste0("Missingness and depth measured on ", scope_note,
+                             "; ", label_note)) +
       theme_classic(base_size = 16) +
       theme(panel.background = element_rect(colour = "black"))
 
-    ggsave(paste0(output_prefix, "_pca.png"), raw_snp_pca, height = 5, width = 6)
+    ggsave(paste0(output_prefix, "_pca.png"), raw_snp_pca, height = 6, width = 8)
 
   } else {
-    ggplot() +
-      annotate("text", x=0.5, y=0.5, label="PCA could not be computed", size=8) +
-      theme_void() + theme(panel.border = element_rect(fill = NA)) %>%
-      ggsave(paste0(output_prefix, "_pca.png"), ., height=5, width=6)
+    p_fail <- ggplot() +
+      annotate("text", x = 0.5, y = 0.5, label = "PCA could not be computed", size = 8) +
+      theme_void() + theme(panel.border = element_rect(fill = NA))
+    ggsave(paste0(output_prefix, "_pca.png"), p_fail, height = 5, width = 6)
   }
 
 } else {
-  ggplot() +
-    annotate("text", x=0.5, y=0.5, label="PCA not available\n(no sites passed MAF filter)", size=8) +
-    theme_void() + theme(panel.border = element_rect(fill = NA)) %>%
-    ggsave(paste0(output_prefix, "_pca.png"), ., height=5, width=6)
+  p_none <- ggplot() +
+    annotate("text", x = 0.5, y = 0.5,
+             label = "PCA not available\n(no sites passed selection filters)", size = 8) +
+    theme_void() + theme(panel.border = element_rect(fill = NA))
+  ggsave(paste0(output_prefix, "_pca.png"), p_none, height = 5, width = 6)
 }
 
 #### Flagged summary outputs ####

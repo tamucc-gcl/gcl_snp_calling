@@ -15,13 +15,27 @@ params.ploidy_map = null
 params.sites_file = null
 params.genotyper = "freebayes"  // "freebayes" or "angsd"
 
+// ##### CHANGE 1: data type, decomposition and diagnostic parameters #####
+// data_type controls the Ts/Tv sweep grids and the PCA site-spacing default.
+// Reduced-representation and whole-genome data need different values: ddRAD
+// has structural locus dropout, so call rates below 50% are normal, while WGS
+// at high sample counts should not, and its dominant false-positive class is
+// collapsed-repeat pileups rather than dropout.
+params.data_type     = "ddrad"   // "ddrad" or "wgs"
+params.atom_overlaps = "."       // "." = missing GT on overlap, "*" = star allele
+params.tstv_ns_grid   = null     // null = use the data_type default grid
+params.tstv_maf_grid  = null
+params.tstv_min_sites = 200
+params.pca_ns_frac     = 0.50
+params.pca_min_spacing = null    // null = 5000 for wgs, 500 for ddrad
+// ##### END CHANGE 1 #####
 
 // PCAngsd parameters
 params.pcangsd_minMaf = null //null to skip and default to all loci which pass ANGSD SNP calling filters, or set to a value (e.g., 0.05) to filter by MAF
 params.pcangsd_maf_iter = 10000
 params.pcangsd_iter = 10000
 params.pcangsd_eigenvalues = null //null for automatic selection with MAP values
-        
+
 // Import modules
 include { CREATE_CHUNKS } from './modules/create_chunks'
 include { FILTER_BAMS } from './modules/filter_bams'
@@ -36,6 +50,11 @@ include { samtools_stats as SAMTOOLS_STATS_FILTERED } from './modules/samtools_s
 include { multiqc as MULTIQC_RAW_BAMS } from './modules/multiqc'
 include { multiqc as MULTIQC_FILTERED_BAMS } from './modules/multiqc'
 include { REPORT_SNP_CALLING_SUMMARY } from './modules/create_report.nf'
+
+// ##### CHANGE 2: new module imports #####
+include { DECOMPOSE_VCF } from './modules/decompose_vcf'
+include { TSTV_SWEEP }    from './modules/tstv_sweep'
+// ##### END CHANGE 2 #####
 
 
 def helpMessage() {
@@ -61,11 +80,24 @@ def helpMessage() {
                         - FreeBayes: Creates this exact VCF file
                         - ANGSD: Uses as base name (e.g., "out.vcf.gz" → "out.beagle.gz", "out.mafs.gz")
     --bam_filter_config Path to JSON file containing BAM filter parameters (optional)
-    
+    --data_type         "ddrad" or "wgs" (default: "ddrad"). Sets the Ts/Tv sweep
+                        grids and the PCA site-spacing default.
+
     FreeBayes-specific:
     --freebayes_config  Path to JSON file containing FreeBayes parameters (optional)
     --ploidy_map        Path to file mapping BAM files to ploidy values (optional)
-    
+    --atom_overlaps     "." or "*" (default: "."). How bcftools norm handles
+                        overlapping atomized alleles during decomposition.
+
+    Diagnostics (FreeBayes only):
+    --tstv_ns_grid      Comma-separated call-rate fractions for the Ts/Tv sweep
+                        (default: set by --data_type)
+    --tstv_maf_grid     Comma-separated MAF floors for the Ts/Tv sweep
+                        (default: set by --data_type)
+    --tstv_min_sites    Grid cells below this site count are flagged unreliable (default: 200)
+    --pca_ns_frac       PCA site call-rate floor as a fraction of n_samples (default: 0.50)
+    --pca_min_spacing   Minimum bp between PCA sites; 0 disables (default: by --data_type)
+
     ANGSD-specific:
     --angsd_config      Path to JSON file containing ANGSD parameters (optional)
     --sites_file        Path to sites file for ANGSD (optional, for targeted analysis)
@@ -88,7 +120,11 @@ def helpMessage() {
     nextflow run main.nf --bams "*.bam" --reference genome.fa \\
         --genotyper freebayes \\
         --output_vcf "my_project.vcf.gz"
-    # Creates: my_project.vcf.gz
+    # Creates: my_project.vcf.gz and my_project.decomposed.vcf.gz
+
+    # Whole-genome data instead of ddRAD
+    nextflow run main.nf --bams "*.bam" --reference genome.fa \\
+        --data_type wgs
     
     # ANGSD with VCF output only
     nextflow run main.nf --bams "*.bam" --reference genome.fa \\
@@ -111,6 +147,13 @@ if (!params.bams || !params.reference) {
     exit 1
 }
 
+// ##### CHANGE 3: validate data_type #####
+if (!(params.data_type in ['ddrad', 'wgs'])) {
+    log.error "ERROR: Invalid data_type '${params.data_type}'. Must be 'ddrad' or 'wgs'"
+    exit 1
+}
+// ##### END CHANGE 3 #####
+
 workflow {
     // Derive output prefix from output_vcf parameter
     // Remove .vcf.gz or .vcf extensions to get base name
@@ -120,6 +163,7 @@ workflow {
     log.info "Parallel Genotyping Pipeline"
     log.info "================================================================"
     log.info "Genotyper:         ${params.genotyper}"
+    log.info "Data type:         ${params.data_type}"   // ##### CHANGE 4 #####
     log.info "BAM files:         ${params.bams}"
     log.info "Reference:         ${params.reference}"
     log.info "Number of chunks:  ${params.num_chunks}"
@@ -127,6 +171,7 @@ workflow {
     
     if (params.genotyper == "freebayes") {
         log.info "Output VCF:        ${params.output_vcf}"
+        log.info "Decomposed VCF:    ${output_prefix}.decomposed.vcf.gz"
         log.info "FreeBayes config:  ${params.freebayes_config ?: 'Using default parameters'}"
         log.info "Ploidy map:        ${params.ploidy_map ?: 'Using global ploidy from config or default'}"
     } else if (params.genotyper == "angsd") {
@@ -251,13 +296,53 @@ workflow {
             ploidy_map_ch
         )
         
-        // Step 4: Combine VCFs
+        // ##### CHANGE 5 starts here #####
+
+        // Step 4: Combine VCFs. This publishes the FreeBayes-native callset
+        // unchanged, retaining multiallelic, MNP and complex records. It is the
+        // only place the collapsed-paralog signal survives per-site, and the
+        // only callset that can be re-decomposed under different settings.
         all_vcfs = vcf_chunks.map { chunk_id, vcf -> vcf }.collect()
         COMBINE_VCFS(all_vcfs, params.output_vcf)
-        
-        // Step 5: Summarize final VCF
-        //SUMMARIZE_VCFS(COMBINE_VCFS.out.vcf, ploidy_map_ch)
-        SUMMARIZE_VCFS(COMBINE_VCFS.out.vcf, ploidy_map_ch, Channel.value('freebayes'))
+
+        // Step 5: Decompose once on the combined callset.
+        // Measured at 8 minutes for 5.7M records x 874 samples, so there is no
+        // case for fanning this out per chunk. Running after the concat also
+        // avoids the boundary shifts that norm's left-alignment creates at
+        // chunk edges: 15% of records were realigned on this dataset.
+        decomposed_name = "${output_prefix}.decomposed.vcf.gz"
+
+        DECOMPOSE_VCF(
+            COMBINE_VCFS.out.vcf,
+            COMBINE_VCFS.out.index,
+            reference_ch,
+            reference_fai_ch,
+            decomposed_name
+        )
+
+        // Step 6: Ts/Tv versus stringency diagnostic.
+        // Emits no filtered VCF on purpose. A MAF floor suits structure and PCA
+        // and is destructive to anything reading the site frequency spectrum,
+        // so the thresholds cannot be chosen once at pipeline level.
+        TSTV_SWEEP(
+            DECOMPOSE_VCF.out.vcf,
+            DECOMPOSE_VCF.out.index,
+            Channel.value(params.data_type)
+        )
+
+        // Step 7: Summarize the decomposed callset
+        SUMMARIZE_VCFS(
+            DECOMPOSE_VCF.out.vcf,
+            ploidy_map_ch,
+            Channel.value('freebayes')
+        )
+
+        report_raw_stats_ch = COMBINE_VCFS.out.raw_stats
+        report_sweep_ch     = TSTV_SWEEP.out.sweep
+        report_precomp_ch   = DECOMPOSE_VCF.out.summary
+        report_decomp_link  = Channel.value(decomposed_name)
+
+        // ##### CHANGE 5 ends here #####
         
     } else if (params.genotyper == "angsd") {
         // ANGSD workflow
@@ -309,13 +394,29 @@ workflow {
         }
         //SUMMARIZE_VCFS(COMBINE_ANGSD.out.vcf, ploidy_map_ch)
         SUMMARIZE_VCFS(COMBINE_ANGSD.out.vcf, ploidy_map_ch, Channel.value('angsd'))
+
+        // ##### CHANGE 6: placeholders so the report call is uniform #####
+        // ANGSD emits simple biallelic calls, so decomposition is a no-op and
+        // the Ts/Tv sweep has no raw-versus-decomposed comparison to make. The
+        // report detects these sentinels and omits the corresponding sections.
+        report_raw_stats_ch = Channel.value(file('NO_FILE'))
+        report_sweep_ch     = Channel.value(file('NO_FILE'))
+        report_precomp_ch   = Channel.value(file('NO_FILE'))
+        report_decomp_link  = Channel.value('NO_DECOMPOSED_VCF')
+        // ##### END CHANGE 6 #####
     }
 
+    // ##### CHANGE 7: report call now takes seven inputs #####
     REPORT_SNP_CALLING_SUMMARY(
         Channel.value(params.genotyper),
         Channel.value("${output_prefix}.vcf.gz"),
+        report_decomp_link,
+        report_raw_stats_ch,
+        report_sweep_ch,
+        report_precomp_ch,
         SUMMARIZE_VCFS.out.report_inputs
     )
+    // ##### END CHANGE 7 #####
 }
 
 workflow.onComplete {
@@ -335,9 +436,20 @@ workflow.onComplete {
         log.info ""
         log.info "Results are available in: ${params.output_dir}/"
         
+        // ##### CHANGE 8 starts here #####
         if (params.genotyper == "freebayes") {
-            log.info "Final VCF file: ${params.output_dir}/${params.output_vcf}"
+            log.info "Callsets (both published):"
+            log.info "- Raw, FreeBayes-native:  ${params.output_dir}/${params.output_vcf}"
+            log.info "    Multiallelic and MNP records intact. Use for the"
+            log.info "    collapsed-paralog signal and for re-decomposition."
+            log.info "- Decomposed, analysis:   ${params.output_dir}/${output_prefix}.decomposed.vcf.gz"
+            log.info "    Split, atomized, deduplicated, tags refilled."
+            log.info "    Filter from this one."
+            log.info ""
+            log.info "Read this before choosing filtering thresholds:"
+            log.info "  ${params.output_dir}/snp_qc/${output_prefix}.tstv_sweep.txt"
         } else if (params.genotyper == "angsd") {
+        // ##### CHANGE 8 ends here #####
             log.info "ANGSD outputs:"
             log.info "- Genotype likelihoods: ${params.output_dir}/${output_prefix}.beagle.gz"
             log.info "- Allele frequencies: ${params.output_dir}/${output_prefix}.mafs.gz"
