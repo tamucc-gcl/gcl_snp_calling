@@ -217,7 +217,7 @@ log.append(f"Minimum site spacing: {min_spacing} bp")
 
 
 def parse(parts):
-    """Return (chrom, pos, ns, maf) or None if the row is unusable."""
+    # Return (chrom, pos, ns, maf), or None if the row is unusable.
     if len(parts) <= COL_AF:
         return None
     try:
