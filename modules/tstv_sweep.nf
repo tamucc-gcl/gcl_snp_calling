@@ -108,13 +108,13 @@ process TSTV_SWEEP {
         skipped = 0
     }
     {
-        ref = toupper($3); alt = toupper($4)
+        ref = toupper(\$3); alt = toupper(\$4)
         # Only unambiguous single-base substitutions are classifiable.
         if (length(ref) != 1 || length(alt) != 1) { skipped++; next }
-        if (ref !~ /^[ACGT]$/ || alt !~ /^[ACGT]$/) { skipped++; next }
+        if (ref !~ /^[ACGT]\$/ || alt !~ /^[ACGT]\$/) { skipped++; next }
 
-        ns = $5 + 0
-        maf = ($6 == "." || $6 == "") ? -1 : $6 + 0
+        ns = \$5 + 0
+        maf = (\$6 == "." || \$6 == "") ? -1 : \$6 + 0
         if (maf < 0) { skipped++; next }
 
         ts = is_transition(ref, alt)
@@ -128,8 +128,8 @@ process TSTV_SWEEP {
         }
     }
     END {
-        printf "min_ns_frac\tmin_ns\tmin_maf\tn_sites\tn_ts\tn_tv\ttstv\treliable\n" > out_tsv
-        printf "%-12s %-9s %-9s %14s %12s %12s %8s %10s\n",
+        printf "min_ns_frac\\tmin_ns\\tmin_maf\\tn_sites\\tn_ts\\tn_tv\\ttstv\\treliable\\n" > out_tsv
+        printf "%-12s %-9s %-9s %14s %12s %12s %8s %10s\\n",
                "MIN_NS_FRAC", "MIN_NS", "MIN_MAF", "n_sites", "n_Ts", "n_Tv",
                "Ts/Tv", "reliable"
 
@@ -141,13 +141,13 @@ process TSTV_SWEEP {
                 if (ntv > 0) { tstv = sprintf("%.3f", nts / ntv) } else { tstv = "NA" }
                 rel = (tot >= min_reliable) ? "yes" : "no"
 
-                printf "%.4f\t%d\t%s\t%d\t%d\t%d\t%s\t%s\n",
+                printf "%.4f\\t%d\\t%s\\t%d\\t%d\\t%d\\t%s\\t%s\\n",
                        NSF[i] + 0, NSMIN[i], MAF[j], tot, nts, ntv, tstv, rel > out_tsv
-                printf "%-12.4f %-9d %-9s %14d %12d %12d %8s %10s\n",
+                printf "%-12.4f %-9d %-9s %14d %12d %12d %8s %10s\\n",
                        NSF[i] + 0, NSMIN[i], MAF[j], tot, nts, ntv, tstv, rel
             }
         }
-        printf "\nUnclassifiable records skipped: %d\n", skipped
+        printf "\\nUnclassifiable records skipped: %d\\n", skipped
     }' sweep_sites.tsv > sweep_console.txt
 
     cat sweep_console.txt
@@ -167,7 +167,7 @@ sweep_path = "${vcf.simpleName}.tstv_sweep.tsv"
 n_samples  = int(open("n_samples.txt").read().strip())
 
 with open(sweep_path) as fh:
-    rows = list(csv.DictReader(fh, delimiter="\t"))
+    rows = list(csv.DictReader(fh, delimiter="\\t"))
 
 print("=== Ts/Tv VS FILTER STRINGENCY ===")
 print(f"Data type: ${data_type}")
