@@ -240,7 +240,7 @@ with gzip.open(site_qc, "rt") as fh:
     fh.readline()
     for line in fh:
         n_rows += 1
-        rec = parse(line.rstrip("\n").split("\t"))
+        rec = parse(line.rstrip("\\n").split("\\t"))
         if rec is None:
             continue
         _, _, ns, maf = rec
@@ -282,7 +282,7 @@ n_dropped_spacing = 0
 with gzip.open(site_qc, "rt") as fh:
     fh.readline()
     for line in fh:
-        rec = parse(line.rstrip("\n").split("\t"))
+        rec = parse(line.rstrip("\\n").split("\\t"))
         if rec is None:
             continue
         chrom, pos, ns, maf = rec
@@ -316,7 +316,7 @@ if len(candidates) > max_sites:
 
 with open("pca_regions.txt", "w") as out:
     for chrom, pos in candidates:
-        print(chrom, pos, sep="\t", file=out)
+        print(chrom, pos, sep="\\t", file=out)
 
 with open("pca_site_selection.txt", "w") as out:
     print("=== PCA SITE SELECTION ===", file=out)
