@@ -41,6 +41,9 @@ def is_missing(path: Path) -> bool:
     """True when a path is a placeholder rather than a real file."""
     return str(path.name) in NO_FILE_SENTINELS or not path.exists()
 
+def is_sentinel(path) -> bool:
+    """For link strings passed as val, which are never staged on disk."""
+    return str(Path(path).name) in NO_FILE_SENTINELS
 
 def rel_link_qc(path: Path) -> str:
     return str(QC_REL_DIR / path.name)
@@ -228,7 +231,7 @@ def build_callset_files_section(caller: str,
                                 raw_summary: dict,
                                 decomp_counts: dict) -> str:
     """Describe both published callsets and which one to use for what."""
-    if is_missing(decomposed_vcf_link):
+    if is_sentinel(decomposed_vcf_link):
         # ANGSD path, or FreeBayes run without decomposition.
         return ""
 
@@ -566,7 +569,7 @@ def build_report(
     worst_sample_rows = safe_read_tsv(worst_samples)
     worst_locus_rows = safe_read_tsv(worst_loci)
 
-    has_decomposed = not is_missing(decomposed_vcf_link)
+    has_decomposed = not is_sentinel(decomposed_vcf_link)
 
     metrics = {}
 

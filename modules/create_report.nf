@@ -24,7 +24,8 @@ process REPORT_SNP_CALLING_SUMMARY {
           path(locus_qc_derived),
           path(worst_samples),
           path(worst_loci),
-          path(pca_site_selection)
+          path(pca_site_selection),
+          path(pca_scores.tsv)
 
     output:
     path("${prefix}_snp_calling_report.md")

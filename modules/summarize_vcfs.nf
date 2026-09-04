@@ -24,6 +24,7 @@ process SUMMARIZE_VCFS {
           path("${vcf.simpleName}_worst_samples.tsv"),
           path("${vcf.simpleName}_worst_loci.tsv"),
           path("${vcf.simpleName}_pca_site_selection.txt"),
+          path("${vcf.simpleName}_pca_scores.tsv"),
           emit: report_inputs
 
     script:
