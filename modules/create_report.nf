@@ -25,7 +25,7 @@ process REPORT_SNP_CALLING_SUMMARY {
           path(worst_samples),
           path(worst_loci),
           path(pca_site_selection),
-          path(pca_scores.tsv)
+          path(pca_scores)
 
     output:
     path("${prefix}_snp_calling_report.md")

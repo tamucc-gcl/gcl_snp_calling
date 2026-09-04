@@ -401,7 +401,8 @@ PY
         for (f in c('${vcf.simpleName}_sample_qc_derived.tsv',
                     '${vcf.simpleName}_locus_qc_derived.tsv',
                     '${vcf.simpleName}_worst_samples.tsv',
-                    '${vcf.simpleName}_worst_loci.tsv'))
+                    '${vcf.simpleName}_worst_loci.tsv',
+                    '${vcf.simpleName}_pca_scores.tsv'))
           write.table(empty, f, sep='\t', quote=FALSE, row.names=FALSE)
         "
     fi

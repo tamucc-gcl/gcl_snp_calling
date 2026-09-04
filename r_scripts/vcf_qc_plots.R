@@ -519,7 +519,8 @@ if (!is.null(pca_vcf)) {
       scope_note    <- "full callset (subset QC unavailable)"
     }
 
-    readr::write_tsv(raw_pca_scores, paste0(output_prefix, "_pca_scores.tsv"))
+        readr::write_tsv(raw_pca_scores %>% mutate(pca_status = "ok"),
+                     paste0(output_prefix, "_pca_scores.tsv"))
 
     use_text_labels <- !is.null(ploidy_map) && is.data.frame(ploidy_map) &&
                        nrow(ploidy_map) > 0 && nrow(ploidy_map) < 10
@@ -592,6 +593,14 @@ if (!is.null(pca_vcf)) {
       annotate("text", x = 0.5, y = 0.5, label = "PCA could not be computed", size = 8) +
       theme_void() + theme(panel.border = element_rect(fill = NA))
     ggsave(paste0(output_prefix, "_pca.png"), p_fail, height = 5, width = 6)
+
+    # _pca_scores.tsv is a declared process output, so it must exist on every
+    # path. Written with NA scores rather than omitted, so a downstream reader
+    # sees the samples and an explicit absence of coordinates.
+    readr::write_tsv(
+      tibble(sample = sample_ids, PC1 = NA_real_, PC2 = NA_real_,
+             pca_status = "pca_failed"),
+      paste0(output_prefix, "_pca_scores.tsv"))
   }
 
 } else {
@@ -600,6 +609,12 @@ if (!is.null(pca_vcf)) {
              label = "PCA not available\n(no sites passed selection filters)", size = 8) +
     theme_void() + theme(panel.border = element_rect(fill = NA))
   ggsave(paste0(output_prefix, "_pca.png"), p_none, height = 5, width = 6)
+
+  # Declared process output; must exist even when no PCA VCF was available.
+  readr::write_tsv(
+    tibble(sample = sample_ids, PC1 = NA_real_, PC2 = NA_real_,
+           pca_status = "no_pca_vcf"),
+    paste0(output_prefix, "_pca_scores.tsv"))
 }
 
 #### Flagged summary outputs ####
